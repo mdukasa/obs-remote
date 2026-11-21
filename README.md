@@ -36,6 +36,8 @@ Tip: give the OBS PC a **fixed IP address** (a DHCP reservation in your router),
 - **Camera:** the joystick goes faster the further you push it. The camera only moves while your finger is down, and stops when you let go, switch apps or lock the phone.
   The **Speed** slider is a share of each camera's top speed, as set in its PTZ filter in OBS.
   **Tap** a preset to go there. **Hold** a preset to save the current position over it (it asks first).
+  **↻ Refresh Camera** reconnects the camera when its picture freezes or its PTZ control stops answering, e.g. after the camera rebooted.
+  It reconnects both the picture source (NDI, GStreamer, webcam, media…) and the obs-ptz link, and takes a few seconds. It asks first if the camera is on air.
 - **Camera names, order and pictures:** Settings (⚙) → *PTZ cameras* lets you give each camera a short name (e.g. show `CAM01-NDI` as `CAM01`)
   and choose which OBS source gives its picture. These are saved in OBS itself, so every phone sees the same. Cameras are listed in name order.
   If a camera's PTZ control is on a source with no picture (e.g. a hidden webcam source), the app automatically uses an active source whose name starts with the same name.
@@ -49,7 +51,8 @@ Tip: give the OBS PC a **fixed IP address** (a DHCP reservation in your router),
 | "Wrong OBS websocket password" | Check it in OBS → *Tools → WebSocket Server Settings → Show Connect Info*. |
 | Camera tab: "OBS has no PTZ control for this app" | Install obs-ptz 1.0 (beta) or newer and set *Websocket access* = *Control*. |
 | Camera moves but the Speed slider seems to do little | The camera's max speed in its obs-ptz filter is low. Raise it there. |
-| A camera keeps moving after the phone dropped off Wi-Fi | Press **■ Stop**, or recall a preset. |
+| Camera picture frozen, or the camera shows "not connected" | Press **↻ Refresh Camera** on the Camera tab. If NDI pictures freeze often, try turning off *NDI Multicast* in the camera's own settings. |
+| A camera keeps moving after the phone dropped off Wi-Fi | Press **■ Stop Moving**, or recall a preset. |
 
 ## Uninstall
 Double-click `Uninstall.bat`. It stops the server, removes it from startup and removes the firewall rules. Then delete the folder.

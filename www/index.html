@@ -100,7 +100,9 @@ h2 button{font-size:12px;padding:4px 8px;text-transform:none;letter-spacing:0}
 .side button{flex:1;font-size:22px;font-weight:700;padding:6px}
 .side small{display:block;font-size:11px;color:var(--dim);font-weight:500}
 .row{display:flex;gap:var(--gap);margin-top:var(--gap);align-items:center}
-.row button{flex:1}
+.row button{flex:1;font-weight:600}
+#btnStop{background:#3b1416;border-color:var(--red);color:#ffb3b5}
+#btnRefresh{background:#33270b;border-color:var(--amber);color:#f2cc72}
 .speed{display:flex;align-items:center;gap:10px;margin-top:var(--gap);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 .speed input{flex:1;accent-color:var(--blue)}
 .speed span{min-width:42px;text-align:right;font-variant-numeric:tabular-nums;color:var(--dim)}
@@ -194,7 +196,7 @@ nav button.sel{color:var(--blue)}
         <button data-focus="1">Focus far</button>
       </div>
       <div class="speed"><span style="color:var(--text);min-width:0">Speed</span><input type="range" id="speed" min="0.05" max="1" step="0.05"><span id="speedV"></span></div>
-      <div class="row"><button id="btnHome">⌂ Home</button><button id="btnStop">■ Stop</button></div>
+      <div class="row"><button id="btnStop">■ Stop Moving</button><button id="btnRefresh">↻ Refresh Camera</button></div>
     </section>
     <h2>Presets <button id="btnAllPresets">Show all</button></h2>
     <div class="presets" id="presets"></div>
@@ -553,7 +555,6 @@ function renderCams(){
     $("focusRow").style.display=f.focus?"":"none";
     $("btnAF").textContent=f.autofocus?(d.state.focus_af_enabled===false?"Auto focus: off":"Auto focus: on"):"Auto focus";
     $("btnAF").disabled=!f.autofocus;
-    $("btnHome").disabled=!f.home;
     document.querySelectorAll("[data-zoom]").forEach(b=>b.disabled=!f.zoom);
   }
   renderAudio();
@@ -617,8 +618,49 @@ document.querySelectorAll("[data-zoom]").forEach(b=>holdButton(b,()=>sendMove(0,
 document.querySelectorAll("[data-focus]").forEach(b=>holdButton(b,()=>sendMove(0,0,0,+(+b.dataset.focus*0.5*capOf("focus")).toFixed(4))));
 $("btnAF").onclick=()=>{const d=curDev();if(!d)return;const on=d.state.focus_af_enabled===false;
   obs.ptz(d.device,"ptz_request_state",{state:{focus_af_enabled:on}}).then(()=>{d.state.focus_af_enabled=on;renderCams()}).catch(fail)};
-$("btnHome").onclick=()=>{const d=curDev();if(d){buzz();obs.ptz(d.device,"ptz_home_recall").catch(fail)}};
 $("btnStop").onclick=()=>{buzz(30);stopMove(true)};
+// ↻ Refresh: reconnect a frozen picture AND the PTZ link. Network cameras sometimes stall (an NDI|HX receiver keeps
+// showing the last frame) or reboot (obs-ptz doesn't reconnect by itself), while OBS reports nothing wrong.
+async function refreshPicture(src){
+  const r=await obs.call("GetInputSettings",{inputName:src}),k=r.inputKind||"",s=r.inputSettings||{};
+  if(/^ndi_source/.test(k)&&s.ndi_source_name){ // DistroAV / obs-ndi: dropping the source and picking it again rebuilds the receiver
+    await obs.call("SetInputSettings",{inputName:src,inputSettings:{ndi_source_name:""}});await sleep(800);
+    await obs.call("SetInputSettings",{inputName:src,inputSettings:{ndi_source_name:s.ndi_source_name}});return}
+  if(k==="ffmpeg_source"||k==="vlc_source"){await obs.call("TriggerMediaInputAction",{inputName:src,mediaAction:"OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART"});return}
+  if(k==="browser_source"){await obs.call("PressInputPropertiesButton",{inputName:src,propertyName:"refreshnocache"});return}
+  if(k==="dshow_input"&&s.active!==false){ // same as the Deactivate / Activate button in its properties
+    await obs.call("SetInputSettings",{inputName:src,inputSettings:{active:false}});await sleep(800);
+    await obs.call("SetInputSettings",{inputName:src,inputSettings:{active:true}});return}
+  // anything else (obs-gstreamer, RTSP plugins, …): re-applying its own settings makes OBS call the source's
+  // update(), which restarts the pipeline/connection
+  await obs.call("SetInputSettings",{inputName:src,inputSettings:s});
+}
+async function refreshPtz(d,gap=2500){
+  const r=await obs.call("GetSourceFilterList",{sourceName:d.source});
+  const f=(r.filters||[]).find(x=>/^ca\.secretlab\.obs-ptz\./.test(x.filterKind));if(!f)return;
+  // connection fields that are text: host/address (IP cameras) or port (serial name, e.g. COM3). A numeric
+  // "address" is a serial camera number and a numeric "port" is a UDP/TCP port, so those are left alone.
+  const s=f.filterSettings||{},orig={},blank={};
+  for(const key of ["host","address","port"])if(typeof s[key]==="string"&&s[key]){orig[key]=s[key];blank[key]=key==="port"?"":"127.0.0.2"}
+  if(!Object.keys(orig).length)return;
+  const set=v=>obs.call("SetSourceFilterSettings",{sourceName:d.source,filterName:f.filterName,filterSettings:v,overlay:true});
+  // obs-ptz needs the dummy address to sit for a moment: switching back within ~1 s never reconnected in testing,
+  // 1.5 s and longer always did. 2.5 s leaves a margin.
+  await set(blank);await sleep(gap);await set(orig);
+}
+const ptzConnected=async(d,secs)=>{for(let i=0;i<secs;i++){await sleep(1000);
+  const st=await obs.ptz(d.device,"ptz_get_state").catch(()=>null);if(st?.state){d.state=st.state;if(d.state.connected)return true}}return false};
+$("btnRefresh").onclick=()=>{const d=curDev();if(!d)return;
+  const go=async()=>{const b=$("btnRefresh");b.disabled=true;stopMove(true);toast("Reconnecting "+nameOf(d)+"…");
+    const errs=[];
+    await Promise.all([refreshPicture(picOf(d)).catch(e=>errs.push("picture: "+e.message)),refreshPtz(d).catch(e=>errs.push("PTZ: "+e.message))]);
+    delete shotErr[picOf(d)];
+    // wait for the camera link to come back; one slower retry if it doesn't (e.g. camera still booting)
+    if(!errs.length&&!await ptzConnected(d,5)){await refreshPtz(d,4000).catch(()=>{});await ptzConnected(d,8)}
+    b.disabled=false;renderCams();loadPresets();
+    if(errs.length)toast(errs.join(" · "),true);
+    else toast(d.state.connected?nameOf(d)+" reconnected":nameOf(d)+": picture refreshed, PTZ camera not answering",!d.state.connected)};
+  isLive(d)?confirmSheet("Refresh "+nameOf(d)+"?","This camera is ON AIR. Its picture will drop for a second or two while it reconnects.","Refresh",true,go):go()};
 // safety: never leave a camera driving when the page loses focus
 document.addEventListener("visibilitychange",()=>{if(document.hidden)stopMove()});
 window.addEventListener("blur",()=>{if(moving)stopMove()});

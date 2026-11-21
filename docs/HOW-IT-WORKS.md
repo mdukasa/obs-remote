@@ -22,7 +22,7 @@ The page subscribes to `InputVolumeMeters` (about 20 per second, about 9 KB/s) o
 Inputs are listed when their type can have audio. Browser sources are only listed when *Control audio via OBS* (`reroute_audio`) is ticked, as in OBS's own mixer.
 
 ## PTZ (obs-ptz websocket vendor API)
-Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz_home_recall`, `ptz_preset_get_list`, `ptz_preset_recall`,
+Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz_preset_get_list`, `ptz_preset_recall`,
 `ptz_preset_save`, `ptz_preset_capture_thumbnail`, `ptz_preset_get_thumbnail`, `ptz_request_state`. Events used: `ptz_state_changed`, `ptz_preset_*`.
 
 | obs-ptz | Camera tab |
@@ -37,6 +37,16 @@ Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz
   Pushes within about 11° of straight snap to a pure pan or tilt.
 - **Picture source:** the PTZ filter's source is used if it's producing video (`GetSourceActive`). Otherwise the app uses the first active video input whose name starts with it, unless overridden in Settings. ON AIR is shown if either source is in the program.
 - **Names and order:** display names and picture overrides are stored in OBS with `SetPersistentData` (profile realm, slot `obs-remote.cameras`, `{names:{source:name}, pictures:{source:input}}`), so all phones share them. Devices are sorted by display name with numeric collation.
+- **Refresh Camera (↻):** reconnects the picture source and the PTZ link. The picture source depends on its kind:
+  - NDI: `ndi_source_name` is set to empty and then back, which rebuilds the receiver.
+  - Media and VLC: restart.
+  - Browser: refresh.
+  - `dshow`: Deactivate, then Activate.
+  - Anything else (e.g. obs-gstreamer): its own settings are re-applied, which makes OBS call the source's `update()`.
+
+  For PTZ, the text connection fields of the obs-ptz filter (`host`/`address`, or a serial `port`) are set to a dummy value for 2.5 s and then restored.
+  obs-ptz doesn't reconnect by itself after a camera reboots. In testing, switching back after less than 1 s never reconnected; 1.5 s and longer always did.
+  If the link isn't back within 5 s, it retries once with a 4 s gap.
 - **Safety:** moves only run while a finger is down. Release, `pointercancel`, `visibilitychange`, `blur` and `pagehide` all send `ptz_stop`.
 - **Presets:** shown when they have a thumbnail or are local, else the first 16. Hikvision's built-in special presets (Call/Set/Start…) are hidden.
 
