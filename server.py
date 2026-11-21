@@ -29,23 +29,25 @@ ROOT = os.path.join(HERE, "www")
 # Updates come only from this repository's main branch, over HTTPS.
 REPO = "mdukasa/obs-remote"
 LATEST_URL = f"https://raw.githubusercontent.com/{REPO}/main/VERSION"
-ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/heads/main"
+SHA_URL = f"https://api.github.com/repos/{REPO}/commits/main"
+ZIP_URL = f"https://codeload.github.com/{REPO}/zip/"  # + commit (or refs/heads/main)
 KEEP = {"Phone address.txt"}  # local files an update never touches
 _latest = {"at": 0.0, "version": None}
 
 
-def fetch(url, timeout):
+def fetch(url, timeout, headers=None):
     """GET a URL. Python's own TLS can fail on Windows when a site's certificate chain needs an intermediate that
     Windows would fetch by itself (seen with GitHub's Let's Encrypt chain), so fall back to Windows' curl.exe,
     which uses the Windows certificate store."""
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers or {}), timeout=timeout) as r:
             return r.read()
     except OSError as e:
         if os.name != "nt" or "CERTIFICATE" not in str(e).upper():
             raise
     curl = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "curl.exe")
-    p = subprocess.run([curl, "-fsSL", "--max-time", str(timeout), url], capture_output=True,
+    hdrs = [x for k, v in (headers or {}).items() for x in ("-H", f"{k}: {v}")]
+    p = subprocess.run([curl, "-fsSL", "--max-time", str(timeout)] + hdrs + [url], capture_output=True,
                        creationflags=0x08000000)  # CREATE_NO_WINDOW: no console flash under pythonw
     if p.returncode:
         raise OSError(p.stderr.decode("utf-8", "replace").strip() or f"curl exit {p.returncode}")
@@ -87,7 +89,14 @@ def update_blocker():
 
 def install_update():
     """Download main from GitHub and copy it over this folder. Returns the new version."""
-    data = fetch(ZIP_URL, 60)
+    # Ask for main's exact commit: the branch ZIP can lag a few minutes behind a push and hand out the old version.
+    try:
+        ref = fetch(SHA_URL, 15, {"Accept": "application/vnd.github.sha", "User-Agent": "obs-remote"}).decode().strip()
+        if len(ref) != 40:
+            raise ValueError(ref[:80])
+    except (OSError, ValueError):
+        ref = "refs/heads/main"
+    data = fetch(ZIP_URL + ref, 60)
     z = zipfile.ZipFile(io.BytesIO(data))
     names = z.namelist()
     top = names[0].split("/")[0] + "/"  # GitHub zips have one top folder, e.g. obs-remote-main/
@@ -112,17 +121,23 @@ def install_update():
     return new_version
 
 
+RESTART = threading.Event()
+
+
 def restart_later(srv):
-    """Free the port, then start a fresh copy of this server (the new server.py) and exit."""
+    """Stop serving; the main program then starts the new server.py (see the bottom of this file).
+    The relaunch must not happen in this thread: once serve_forever() returns the program ends, which would kill it."""
     def go():
         time.sleep(0.5)  # let the reply reach the phone
+        RESTART.set()
         srv.shutdown()
-        srv.server_close()
-        flags = 0x00000008 | 0x00000200 if os.name == "nt" else 0  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        subprocess.Popen([sys.executable, os.path.join(HERE, "server.py")] + sys.argv[1:], cwd=HERE,
-                         creationflags=flags, close_fds=True)
-        os._exit(0)
-    threading.Thread(target=go, daemon=True).start()
+    threading.Thread(target=go).start()
+
+
+def relaunch():
+    flags = 0x00000008 | 0x00000200 if os.name == "nt" else 0  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    subprocess.Popen([sys.executable, os.path.join(HERE, "server.py")] + sys.argv[1:], cwd=HERE,
+                     creationflags=flags, close_fds=True)
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -218,3 +233,6 @@ if __name__ == "__main__":
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
+    srv.server_close()
+    if RESTART.is_set():
+        relaunch()

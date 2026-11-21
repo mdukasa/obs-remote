@@ -64,8 +64,8 @@ Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz
   `latest` is read from `raw.githubusercontent.com/mdukasa/obs-remote/main/VERSION` and cached for 10 minutes.
   `blocked` is set when the folder is a git checkout, because those update with `git pull`.
 - `POST /api/update` needs the header `X-OBS-Remote: 1`. A cross-site page can't send it without a CORS preflight, which the server never allows.
-  It downloads the `main` ZIP from codeload.github.com, checks that it is OBS Remote, and copies it over the folder, never outside it.
-  It never touches `Phone address.txt`. Then it frees the port and starts a fresh `server.py`, which retries the port for up to 10 s.
+  It looks up `main`'s exact commit (api.github.com; the branch ZIP can lag a few minutes after a push), downloads that ZIP from codeload.github.com, checks that it is OBS Remote, and copies it over the folder, never outside it.
+  It never touches `Phone address.txt`. Then it stops serving, and the main program starts a fresh `server.py`, which retries the port for up to 10 s. The relaunch must happen in the main program: from a worker thread it gets killed when the program ends.
 - Downloads go through Python's TLS first. If certificate verification fails, they fall back to Windows' `curl.exe`, which uses the Windows certificate store.
   This was seen with GitHub's newer Let's Encrypt chain, which Python couldn't complete.
 - `python server.py update` does the same download from the command line and exits. Run `Install.bat` afterwards to restart the server.
