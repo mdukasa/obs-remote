@@ -128,6 +128,7 @@ nav button.sel{color:var(--blue)}
 .sheet .danger{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
 .sheet .primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:700}
 .field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.camrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.camrow .field{min-width:0}.camrow select{width:100%}
 .field label{font-size:12px;color:var(--dim)}
 .field input{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px}
 .check{display:flex;align-items:center;gap:10px;padding:8px 0}
@@ -498,9 +499,11 @@ async function loadDevices(){
   const devs=r?.responseData?.devices||[];
   S.videoInputs=((await obs.call("GetInputList").catch(()=>({inputs:[]}))).inputs||[])
     .filter(i=>i.inputKindCaps===undefined||(i.inputKindCaps&1)).map(i=>i.inputName);
+  S.camCfg=await loadCamCfg();
   S.devices=await Promise.all(devs.map(async d=>{
     const [st,caps]=await Promise.all([obs.ptz(d.device,"ptz_get_state").catch(()=>({state:{}})),loadCaps(d.source)]);
     return{device:d.device,source:d.source,kind:d.name,state:st.state||{},caps,auto:await autoPicture(d.source)}}));
+  S.devices.sort((a,b)=>nameOf(a).localeCompare(nameOf(b),undefined,{numeric:true,sensitivity:"base"}));
   if(!curDev()&&S.devices.length)S.dev=(S.devices.find(d=>d.state.connected)||S.devices[0]).device;
   renderCams();await loadPresets();
 }
@@ -524,10 +527,18 @@ async function autoPicture(source){
   for(const n of (S.videoInputs||[]).filter(n=>n!==source&&n.toLowerCase().startsWith(low)))if(await active(n))return n;
   return source;
 }
-const picOf=d=>d?(store.get("pic:"+d.source,"")||d.auto||d.source):"";
+// Per-camera display names and picture sources live in OBS itself (obs-websocket persistent data, profile realm),
+// so every phone sees the same names. Cameras are listed in natural name order (CAM01, CAM02, CAM03, CAM03-USB…).
+const CAMCFG={realm:"OBS_WEBSOCKET_DATA_REALM_PROFILE",slotName:"obs-remote.cameras"};
+async function loadCamCfg(){
+  const r=await obs.call("GetPersistentData",CAMCFG).catch(()=>null);const v=r?.slotValue;
+  return{names:v?.names||{},pictures:v?.pictures||{}};
+}
+const nameOf=d=>d?(S.camCfg?.names?.[d.source]||d.source):"";
+const picOf=d=>d?(S.camCfg?.pictures?.[d.source]||d.auto||d.source):"";
 const isLive=d=>!!d&&(S.liveSources.has(d.source)||S.liveSources.has(picOf(d)));
 function renderCams(){
-  $("cams").innerHTML=S.devices.length?S.devices.map(d=>`<button class="chip${d.device===S.dev?" sel":""}" data-dev="${d.device}"><span class="dot ${d.state.connected?"ok":""}"></span>${esc(d.source)}${isLive(d)?" · LIVE":""}</button>`).join("")
+  $("cams").innerHTML=S.devices.length?S.devices.map(d=>`<button class="chip${d.device===S.dev?" sel":""}" data-dev="${d.device}"><span class="dot ${d.state.connected?"ok":""}"></span>${esc(nameOf(d))}${isLive(d)?" · LIVE":""}</button>`).join("")
     :S.ptzMissing?`<div class="empty">OBS has no PTZ control for this app. It needs obs-ptz <b>1.0 (beta)</b> or newer with Settings → Websocket access = “Control”. The stable 0.19.x release has no websocket control. Everything on the Live tab still works.</div>`
     :`<div class="empty">No PTZ cameras found. Is the obs-ptz plugin loaded, with websocket access set to “Control”?</div>`;
   const d=curDev();
@@ -535,7 +546,7 @@ function renderCams(){
   $("camMon").classList.toggle("pgm",isLive(d));
   if(d){const f=d.state.features||{};
     const pn=picOf(d)!==d.source?` (picture: ${picOf(d)})`:"";
-    $("camState").textContent=(d.state.connected?`${d.source} · ${d.kind.replace(" PTZ Control","")}`:`${d.source} · camera not connected`)+pn;
+    $("camState").textContent=(d.state.connected?`${nameOf(d)} · ${d.kind.replace(" PTZ Control","")}`:`${nameOf(d)} · camera not connected`)+pn;
     $("focusRow").style.display=f.focus?"":"none";
     $("btnAF").textContent=f.autofocus?(d.state.focus_af_enabled===false?"Auto focus: off":"Auto focus: on"):"Auto focus";
     $("btnAF").disabled=!f.autofocus;
@@ -653,7 +664,7 @@ $("btnAllPresets").onclick=()=>{S.showAllPresets=!S.showAllPresets;renderPresets
 })();
 function savePreset(id){
   const d=curDev();if(!d)return;const p=(S.presets[d.device]||[]).find(x=>x.id===id);
-  confirmSheet(`Overwrite “${p?.name||id}”?`,`Saves ${d.source}'s current position into this preset. The old position is lost.`,"Save position",true,
+  confirmSheet(`Overwrite “${p?.name||id}”?`,`Saves ${nameOf(d)}'s current position into this preset. The old position is lost.`,"Save position",true,
     async()=>{try{await obs.ptz(d.device,"ptz_preset_save",{id});delete S.thumbs[d.device+"|"+id];
       await obs.ptz(d.device,"ptz_preset_capture_thumbnail",{id,if_arrived:false}).catch(()=>{});
       toast("Preset saved");setTimeout(loadPresets,800)}catch(e){fail(e)}});
@@ -680,19 +691,27 @@ function openSettings(force){
       <option value="saver"${S.quality==="saver"?" selected":""}>Data saver — 2 fps</option></select></div>
     ${S.scenes.length?`<label class="check"><input type="checkbox" id="sDirect" ${S.directTap?"checked":""}>Studio mode: tapping a scene sends it straight to program</label>
     <div class="field"><label>Scenes shown on the phone</label></div><div class="hidelist">${hideRows}</div>`:""}
-    ${S.devices.length?`<div class="field"><label>Camera pictures (which OBS source to show for each PTZ camera)</label></div>
-    ${S.devices.map(d=>{const cur=store.get("pic:"+d.source,"");return `<div class="field"><label>${esc(d.source)}</label><select data-pic="${esc(d.source)}">
+    ${S.devices.length?`<div class="field"><label>PTZ cameras: name shown in the app, and which OBS source gives the picture. Saved in OBS for every phone; cameras are listed in name order.</label></div>
+    ${S.devices.map(d=>{const cur=S.camCfg?.pictures?.[d.source]||"";return `<div class="camrow"><div class="field"><label>${esc(d.source)} · name</label><input data-name="${esc(d.source)}" value="${esc(S.camCfg?.names?.[d.source]||"")}" placeholder="${esc(d.source)}" autocapitalize="off"></div>
+      <div class="field"><label>picture</label><select data-pic="${esc(d.source)}">
       <option value=""${cur?"":" selected"}>Automatic (${esc(d.auto||d.source)})</option>
-      ${(S.videoInputs||[]).map(n=>`<option value="${esc(n)}"${cur===n?" selected":""}>${esc(n)}</option>`).join("")}</select></div>`}).join("")}`:""}
+      ${(S.videoInputs||[]).map(n=>`<option value="${esc(n)}"${cur===n?" selected":""}>${esc(n)}</option>`).join("")}</select></div></div>`}).join("")}`:""}
     <div class="btns${force?" one":""}">${force?"":"<button data-close>Close</button>"}<button class="primary" id="sSave">Save &amp; connect</button></div>`,
-    close=>{$("sSave").onclick=()=>{
+    close=>{$("sSave").onclick=async()=>{
       cfg.host=$("sHost").value.trim();cfg.port=+$("sPort").value||4455;cfg.pw=$("sPw").value;
       store.set("host",cfg.host);store.set("port",cfg.port);store.set("pw",cfg.pw);
       S.quality=$("sQuality").value;store.set("quality",S.quality);
       if($("sDirect")){S.directTap=$("sDirect").checked;store.set("directTap",S.directTap)}
       document.querySelectorAll("[data-hide]").forEach(c=>c.checked?S.hidden.delete(c.dataset.hide):S.hidden.add(c.dataset.hide));
       store.set("hidden",[...S.hidden]);renderScenes();
-      document.querySelectorAll("[data-pic]").forEach(el=>store.set("pic:"+el.dataset.pic,el.value));$("imgCam").removeAttribute("src");delete $("scrim").dataset.lock;close();
+      if(S.devices.length&&obs.ready){
+        const c={names:{...(S.camCfg?.names||{})},pictures:{...(S.camCfg?.pictures||{})}};
+        const put=(o,k,v)=>{if(v)o[k]=v;else delete o[k]};
+        document.querySelectorAll("[data-name]").forEach(el=>put(c.names,el.dataset.name,el.value.trim()));
+        document.querySelectorAll("[data-pic]").forEach(el=>put(c.pictures,el.dataset.pic,el.value));
+        await obs.call("SetPersistentData",{...CAMCFG,slotValue:c}).catch(fail);
+      }
+      $("imgCam").removeAttribute("src");delete $("scrim").dataset.lock;close();
       obs.close();connect()}});
   if(force)$("scrim").dataset.lock="1";else delete $("scrim").dataset.lock;
 }
