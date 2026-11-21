@@ -47,6 +47,8 @@ Tip: give the OBS PC a **fixed IP address** (a DHCP reservation in your router),
 - **Camera names, order and pictures:** Settings (⚙) → *PTZ cameras* lets you give each camera a short name (e.g. show `CAM01-NDI` as `CAM01`)
   and choose which OBS source gives its picture. These are saved in OBS itself, so every phone sees the same. Cameras are listed in name order.
   If a camera's PTZ control is on a source with no picture (e.g. a hidden webcam source), the app automatically uses an active source whose name starts with the same name.
+- **Frozen NDI cameras:** some NDI cameras' pictures stall now and then, and OBS keeps showing the last frame. OBS Remote watches the NDI sources of your PTZ cameras and reconnects one automatically when its picture stops changing for about 20 seconds.
+  Pictures that never move, like a slide, are left alone. Turn it off in Settings; each fix is listed there and logged in `autofix.log`.
 - **Picture quality:** Settings → Picture: *Smooth* (25 fps), *Balanced* (10) or *Data saver* (2). Smooth uses about 5 Mbit/s of Wi-Fi.
 
 ## Troubleshooting
@@ -57,7 +59,7 @@ Tip: give the OBS PC a **fixed IP address** (a DHCP reservation in your router),
 | "Wrong OBS websocket password" | Check it in OBS → *Tools → WebSocket Server Settings → Show Connect Info*. |
 | Camera tab: "OBS has no PTZ control for this app" | Install obs-ptz 1.0 (beta) or newer and set *Websocket access* = *Control*. |
 | Camera moves but the Speed slider seems to do little | The camera's max speed in its obs-ptz filter is low. Raise it there. |
-| Camera picture frozen, or the camera shows "not connected" | Press **↻ Refresh Camera** on the Camera tab. If NDI pictures freeze often, try turning off *NDI Multicast* in the camera's own settings. |
+| Camera picture frozen, or the camera shows "not connected" | NDI camera pictures are reconnected automatically after about 20 seconds (Settings → *Reconnect a camera automatically…*). Otherwise press **↻ Refresh Camera** on the Camera tab. If NDI pictures freeze often, try turning off *NDI Multicast* in the camera's own settings. |
 | A camera keeps moving after the phone dropped off Wi-Fi | Press **■ Stop Moving**, or recall a preset. |
 
 ## Uninstall

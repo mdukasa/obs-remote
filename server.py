@@ -22,6 +22,8 @@ import time
 import urllib.request
 import zipfile
 
+import autofix
+
 UPDATE_ONLY = len(sys.argv) > 1 and sys.argv[1].lower() == "update"
 UPDATE_TAG = sys.argv[2] if UPDATE_ONLY and len(sys.argv) > 2 else None
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 and not UPDATE_ONLY else int(os.environ.get("OBS_REMOTE_PORT", "8765"))
@@ -34,7 +36,7 @@ REPO = "mdukasa/obs-remote"
 LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/tags/"  # + tag
 API_HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "obs-remote"}
-KEEP = {"Phone address.txt", "Phone address.html"}  # local files an update never touches
+KEEP = {"Phone address.txt", "Phone address.html", "autofix.log"}  # local files an update never touches
 _latest = {"at": 0.0, "release": None}
 
 
@@ -167,6 +169,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                         "notes": rel and rel["notes"], "url": rel and rel["url"],
                                         "update": bool(rel) and vtuple(rel["version"]) > vtuple(cur),
                                         "blocked": update_blocker()})
+        if self.path.split("?")[0] == "/api/autofix":
+            return self.send_json(200, {**autofix.STATE, "events": list(autofix.EVENTS)})
         return super().do_GET()
 
     def do_POST(self):
@@ -229,6 +233,7 @@ if __name__ == "__main__":
             time.sleep(0.5)
     if srv is None:
         sys.exit(f"Can't use port {PORT} ({err}). Is OBS Remote already running?")
+    autofix.start()
     if sys.stdout:
         print("OBS Remote is running. On your phone (same Wi-Fi), open:")
         for ip in lan_ips():

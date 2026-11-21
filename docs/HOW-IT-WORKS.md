@@ -50,6 +50,21 @@ Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz
 - **Safety:** moves only run while a finger is down. Release, `pointercancel`, `visibilitychange`, `blur` and `pagehide` all send `ptz_stop`.
 - **Presets:** shown when they have a thumbnail or are local, else the first 16. Hikvision's built-in special presets (Call/Set/Start…) are hidden.
 
+## Auto-reconnect of frozen NDI pictures (`autofix.py`)
+At SMIC, FoMaKo NDI|HX cameras into DistroAV 6.1.1 / NDI 6.3.2 sometimes stalled: OBS kept showing the last frame and logged nothing.
+The PTZ link stayed connected, and re-selecting the NDI source fixed it every time.
+`server.py` starts a thread that does this re-select by itself:
+- It connects to obs-websocket on 127.0.0.1 with a small built-in websocket client, using the port and password from OBS's own `obs-websocket/config.json`.
+- **Sources watched:** NDI inputs that carry an obs-ptz camera, plus pictures chosen for those cameras in the app. Only while they're active or showing.
+- **Frozen means:**
+  - The picture showed at least 3 different frames in the 40 s before, then exactly the same frame for 20 s.
+  - Checked every 4 s with a 320 px, quality-90 screenshot. At that size live frames always differ; smaller or lower-quality shots of a still, noise-reduced scene sometimes repeat.
+- **The fix:** `ndi_source_name` is set to empty, then back. At most once a minute per source.
+  A source not seen moving, e.g. already frozen when the server started, gets one try. If it then stays still (a slide, a camera that's off), it's left alone until it moves again.
+- **On/off:** persistent data slot `obs-remote.settings` `{autofix}` (profile realm), default on.
+  `GET /api/autofix` returns `{running, enabled, error, watching, events}`, and Settings shows it. Fixes are also appended to `autofix.log`.
+- `OBS_REMOTE_OBS_HOST` points the watcher at another PC (testing only).
+
 ## Setup scripts
 - `setup/install.ps1` finds Python 3.8+ (or offers `winget install Python.Python.3.12`) and reads OBS's websocket config.
   It detects whether obs-ptz has websocket support by looking for `ptz_list_devices` in the DLL, then opens the firewall.

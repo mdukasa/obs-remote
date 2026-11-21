@@ -729,7 +729,7 @@ document.querySelectorAll("nav [data-tab]").forEach(b=>b.onclick=()=>{
 /* ---------- settings ---------- */
 function openSettings(force){
   const hideRows=S.scenes.map(n=>`<label class="check"><input type="checkbox" data-hide="${esc(n)}" ${S.hidden.has(n)?"":"checked"}>${esc(n)}</label>`).join("");
-  sheet(`<h3>Settings</h3><div id="sUpd"></div>
+  sheet(`<h3>Settings</h3><div id="sUpd"></div><div id="sFix"></div>
     <div class="field"><label>OBS PC address</label><input id="sHost" value="${esc(cfg.host)}" inputmode="url" autocapitalize="off"></div>
     <div class="field"><label>Websocket port</label><input id="sPort" value="${esc(cfg.port)}" inputmode="numeric"></div>
     <div class="field"><label>Websocket password (OBS → Tools → WebSocket Server Settings)</label><input id="sPw" type="password" value="${esc(cfg.pw)}" autocomplete="current-password"></div>
@@ -745,7 +745,7 @@ function openSettings(force){
       <option value=""${cur?"":" selected"}>Automatic (${esc(d.auto||d.source)})</option>
       ${(S.videoInputs||[]).map(n=>`<option value="${esc(n)}"${cur===n?" selected":""}>${esc(n)}</option>`).join("")}</select></div></div>`}).join("")}`:""}
     <div class="btns${force?" one":""}">${force?"":"<button data-close>Close</button>"}<button class="primary" id="sSave">Save &amp; connect</button></div>`,
-    close=>{renderUpd();checkUpdate();$("sSave").onclick=async()=>{
+    close=>{renderUpd();checkUpdate();loadAutofix();$("sSave").onclick=async()=>{
       cfg.host=$("sHost").value.trim();cfg.port=+$("sPort").value||4455;cfg.pw=$("sPw").value;
       store.set("host",cfg.host);store.set("port",cfg.port);store.set("pw",cfg.pw);
       S.quality=$("sQuality").value;store.set("quality",S.quality);
@@ -759,11 +759,26 @@ function openSettings(force){
         document.querySelectorAll("[data-pic]").forEach(el=>put(c.pictures,el.dataset.pic,el.value));
         await obs.call("SetPersistentData",{...CAMCFG,slotValue:c}).catch(fail);
       }
+      if($("sAutofix")&&obs.ready)await obs.call("SetPersistentData",{...APPSET,slotValue:{autofix:$("sAutofix").checked}}).catch(fail);
       $("imgCam").removeAttribute("src");delete $("scrim").dataset.lock;close();
       obs.close();connect()}});
   if(force)$("scrim").dataset.lock="1";else delete $("scrim").dataset.lock;
 }
 $("btnSettings").onclick=()=>openSettings(false);
+
+/* ---------- auto-reconnect of frozen NDI cameras (runs in server.py, see autofix.py) ---------- */
+const APPSET={realm:"OBS_WEBSOCKET_DATA_REALM_PROFILE",slotName:"obs-remote.settings"};
+async function loadAutofix(){
+  const el=$("sFix");if(!el)return;
+  let a;try{const r=await fetch("/api/autofix",{cache:"no-store"});if(!r.ok)return;a=await r.json()}catch{return}
+  const t=x=>new Date(x*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  const today=a.events.filter(e=>new Date(e.t*1000).toDateString()===new Date().toDateString());
+  const last=a.events[a.events.length-1];
+  const info=!a.running?`Not running: ${esc(a.error||"can't reach OBS")}`
+    :!a.watching.length?"No NDI cameras to watch."
+    :`Watching ${a.watching.map(esc).join(", ")}.`+(last?` Last fix: ${esc(last.source)} at ${t(last.t)} (${today.length} today).`:" No freezes so far.");
+  el.innerHTML=`<label class="check"><input type="checkbox" id="sAutofix" ${a.enabled?"checked":""}>Reconnect a camera automatically when its NDI picture freezes</label>
+    <p class="hint" style="margin:-6px 0 14px 30px;font-size:12px;color:var(--dim)">${info}</p>`}
 
 /* ---------- self-update ----------
    server.py compares its VERSION with the one on GitHub and, on request, downloads main and restarts itself.
