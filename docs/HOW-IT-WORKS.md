@@ -58,15 +58,27 @@ Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz
 - `setup/firewall.ps1` runs elevated. It adds two inbound TCP rules (page port and OBS websocket port), limited to `RemoteAddress LocalSubnet`, or removes them with `-Remove`.
 - `setup/uninstall.ps1` stops the server, removes the shortcut and removes the rules.
 
-## Updates
-- `VERSION` holds the release number. **Bump it with every change pushed to `main`**, or installed copies won't see the update.
-- `GET /api/version` returns `{version, latest, update, blocked}`.
-  `latest` is read from `raw.githubusercontent.com/mdukasa/obs-remote/main/VERSION` and cached for 10 minutes.
+## Updates (GitHub Releases)
+Installed copies follow the repo's **published releases**, like OBS does. Pushing to `main` ships nothing.
+
+**To release:** bump `VERSION` (e.g. `1.2.1`), commit and push, then publish a release whose tag matches, with notes:
+```
+gh release create v1.2.1 --title "OBS Remote 1.2.1" --notes "What changed, in a line or two."
+```
+The notes show on the phone's Update prompt. A release created with `--prerelease`, or as a draft, is ignored by the Update button.
+To test one on a single PC, run `py server.py update v1.3.0-beta1`.
+
+- `GET /api/version` returns `{version, latest, notes, url, update, blocked}`.
+  `latest` and `notes` come from `api.github.com/repos/mdukasa/obs-remote/releases/latest`, cached for 10 minutes.
+  That's at most 6 calls an hour, well under GitHub's limit of 60 an hour without an account.
   `blocked` is set when the folder is a git checkout, because those update with `git pull`.
 - `POST /api/update` needs the header `X-OBS-Remote: 1`. A cross-site page can't send it without a CORS preflight, which the server never allows.
-  It looks up `main`'s exact commit (api.github.com; the branch ZIP can lag a few minutes after a push), downloads that ZIP from codeload.github.com, checks that it is OBS Remote, and copies it over the folder, never outside it.
-  It never touches `Phone address.txt`. Then it stops serving, and the main program starts a fresh `server.py`, which retries the port for up to 10 s. The relaunch must happen in the main program: from a worker thread it gets killed when the program ends.
+  It re-reads the latest release, downloads that tag's ZIP from codeload.github.com, checks that it is OBS Remote, and copies it over the folder, never outside it.
+  It never touches `Phone address.txt`.
+  Then it stops serving, and the main program starts a fresh `server.py`, which retries the port for up to 10 s.
+  The relaunch must happen in the main program: from a worker thread it gets killed when the program ends.
 - Downloads go through Python's TLS first. If certificate verification fails, they fall back to Windows' `curl.exe`, which uses the Windows certificate store.
   This was seen with GitHub's newer Let's Encrypt chain, which Python couldn't complete.
-- `python server.py update` does the same download from the command line and exits. Run `Install.bat` afterwards to restart the server.
+- `python server.py update [tag]` does the same from the command line and exits. Run `Install.bat` afterwards to restart the server.
 - The page checks `/api/version` when it loads, when Settings opens and every 6 hours. When the server reports an update, it shows a dot on ⚙.
+- Before 1.2.0, copies followed the `VERSION` file on `main` instead. A 1.1.x copy therefore moves to 1.2.0 when `main` says 1.2.0, and follows releases from then on.

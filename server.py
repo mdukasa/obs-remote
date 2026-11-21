@@ -5,7 +5,8 @@ server only hands out the files in www/. Python standard library only.
 
     python server.py            # serves on port 8765
     python server.py 9000       # another port
-    python server.py update     # download the latest version from GitHub into this folder, then exit
+    python server.py update     # install the latest GitHub release into this folder, then exit
+    python server.py update v1.3.0-beta1   # install a specific release or tag (e.g. a pre-release to test)
 """
 import functools
 import http.server
@@ -22,17 +23,19 @@ import urllib.request
 import zipfile
 
 UPDATE_ONLY = len(sys.argv) > 1 and sys.argv[1].lower() == "update"
+UPDATE_TAG = sys.argv[2] if UPDATE_ONLY and len(sys.argv) > 2 else None
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 and not UPDATE_ONLY else int(os.environ.get("OBS_REMOTE_PORT", "8765"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "www")
 
-# Updates come only from this repository's main branch, over HTTPS.
+# Updates come only from this repository's GitHub Releases, over HTTPS. Pushing to main ships nothing:
+# installed copies only move when a release is published (pre-releases and drafts are skipped).
 REPO = "mdukasa/obs-remote"
-LATEST_URL = f"https://raw.githubusercontent.com/{REPO}/main/VERSION"
-SHA_URL = f"https://api.github.com/repos/{REPO}/commits/main"
-ZIP_URL = f"https://codeload.github.com/{REPO}/zip/"  # + commit (or refs/heads/main)
+LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
+ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/tags/"  # + tag
+API_HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "obs-remote"}
 KEEP = {"Phone address.txt"}  # local files an update never touches
-_latest = {"at": 0.0, "version": None}
+_latest = {"at": 0.0, "release": None}
 
 
 def fetch(url, timeout, headers=None):
@@ -64,20 +67,23 @@ def local_version():
 
 def vtuple(v):
     try:
-        return tuple(int(x) for x in v.split("."))
+        return tuple(int(x) for x in v.lstrip("vV").split("."))
     except (AttributeError, ValueError):
         return (0,)
 
 
-def latest_version():
-    """Newest version on GitHub, cached for 10 minutes. None if GitHub can't be reached."""
-    if time.time() - _latest["at"] > 600 or _latest["version"] is None:
+def latest_release(fresh=False):
+    """{tag, version, notes, url} of the newest published release, cached for 10 minutes.
+    None if GitHub can't be reached or nothing has been released."""
+    if fresh or time.time() - _latest["at"] > 600 or _latest["release"] is None:
         try:
-            _latest["version"] = fetch(LATEST_URL, 8)[:64].decode("utf-8", "replace").strip() or None
-        except OSError:
-            _latest["version"] = None
+            r = json.loads(fetch(LATEST_URL, 10, API_HEADERS))
+            _latest["release"] = {"tag": r["tag_name"], "version": r["tag_name"].lstrip("vV"),
+                                  "notes": (r.get("body") or "").strip()[:2000], "url": r.get("html_url")}
+        except (OSError, ValueError, KeyError, TypeError):
+            _latest["release"] = None
         _latest["at"] = time.time()
-    return _latest["version"]
+    return _latest["release"]
 
 
 def update_blocker():
@@ -87,22 +93,20 @@ def update_blocker():
     return None
 
 
-def install_update():
-    """Download main from GitHub and copy it over this folder. Returns the new version."""
-    # Ask for main's exact commit: the branch ZIP can lag a few minutes behind a push and hand out the old version.
-    try:
-        ref = fetch(SHA_URL, 15, {"Accept": "application/vnd.github.sha", "User-Agent": "obs-remote"}).decode().strip()
-        if len(ref) != 40:
-            raise ValueError(ref[:80])
-    except (OSError, ValueError):
-        ref = "refs/heads/main"
-    data = fetch(ZIP_URL + ref, 60)
+def install_update(tag=None):
+    """Download a release (default: the latest) and copy it over this folder. Returns the new version."""
+    if not tag:
+        rel = latest_release(fresh=True)
+        if not rel:
+            raise RuntimeError("Couldn't find a release on GitHub.")
+        tag = rel["tag"]
+    data = fetch(ZIP_URL + tag, 60)
     z = zipfile.ZipFile(io.BytesIO(data))
     names = z.namelist()
-    top = names[0].split("/")[0] + "/"  # GitHub zips have one top folder, e.g. obs-remote-main/
+    top = names[0].split("/")[0] + "/"  # GitHub zips have one top folder, e.g. obs-remote-1.2.0/
     if not all(n.startswith(top) for n in names) or top + "server.py" not in names or top + "www/index.html" not in names:
         raise RuntimeError("The download doesn't look like OBS Remote.")
-    new_version = z.read(top + "VERSION").decode("utf-8").strip() if top + "VERSION" in names else "?"
+    new_version = z.read(top + "VERSION").decode("utf-8").strip() if top + "VERSION" in names else tag.lstrip("vV")
     for n in names:
         rel = n[len(top):]
         if not rel or rel in KEEP or rel.startswith(".git/"):
@@ -158,9 +162,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.split("?")[0] == "/api/version":
-            latest, cur = latest_version(), local_version()
-            return self.send_json(200, {"version": cur, "latest": latest,
-                                        "update": bool(latest) and vtuple(latest) > vtuple(cur),
+            rel, cur = latest_release(), local_version()
+            return self.send_json(200, {"version": cur, "latest": rel and rel["version"],
+                                        "notes": rel and rel["notes"], "url": rel and rel["url"],
+                                        "update": bool(rel) and vtuple(rel["version"]) > vtuple(cur),
                                         "blocked": update_blocker()})
         return super().do_GET()
 
@@ -209,8 +214,8 @@ if __name__ == "__main__" and UPDATE_ONLY:
     why = update_blocker()
     if why:
         sys.exit(why)
-    print(f"Updating OBS Remote {local_version()} from GitHub...")
-    print(f"Now at version {install_update()}. Run Install.bat to restart it.")
+    print(f"Updating OBS Remote {local_version()} from GitHub {UPDATE_TAG or 'latest release'}...")
+    print(f"Now at version {install_update(UPDATE_TAG)}. Run Install.bat to restart it.")
     sys.exit(0)
 
 if __name__ == "__main__":

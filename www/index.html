@@ -130,7 +130,7 @@ nav button.sel{color:var(--blue)}
   max-height:calc(100vh - 24px - var(--safe-t));max-height:calc(100dvh - 24px - var(--safe-t));overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .sheet .btns{position:sticky;bottom:calc(-18px - var(--safe-b));margin:0 -16px;padding:12px 16px;background:var(--panel);border-top:1px solid var(--line)}
 .sheet h3{margin:0 0 6px;font-size:18px}
-.sheet p{margin:0 0 14px;color:var(--dim)}
+.sheet p{margin:0 0 14px;color:var(--dim);white-space:pre-line}
 .sheet .btns{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
 .sheet .btns.one{grid-template-columns:1fr}
 .sheet .danger{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
@@ -778,7 +778,10 @@ function renderUpd(){
     u.update?(u.blocked?`${esc(u.latest)} is available. ${esc(u.blocked)}`:`Version ${esc(u.latest)} is available.`)
     :u.latest?"Up to date.":"Couldn't check for updates. Is the OBS PC online?"}</span>${
     u.update&&!u.blocked?`<button class="primary" id="sUpdate">Update</button>`:""}</div>`;
+  // release notes (GitHub markdown, shown as plain text) above the usual explanation
+  const notes=(u.notes||"").replace(/\r/g,"").replace(/^#+\s*/gm,"").replace(/\*\*|__|`/g,"").trim();
   if($("sUpdate"))$("sUpdate").onclick=()=>confirmSheet(`Update to ${u.latest}?`,
+    (notes?(notes.length>600?notes.slice(0,600)+"…":notes)+"\n\n":"")+
     "The OBS PC downloads the new version from GitHub and restarts the app's web server. OBS itself keeps running. Phones reload in a few seconds.",
     "Update",false,runUpdate)}
 async function runUpdate(){
