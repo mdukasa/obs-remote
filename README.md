@@ -27,6 +27,7 @@ Run `Install.bat` again any time to repair it.
 When a new version is out, a dot appears on the ⚙ button. Open Settings and tap **Update**.
 The OBS PC downloads the new version from GitHub and restarts the app's web server, and phones reload by themselves a few seconds later. OBS itself keeps running.
 Copies installed before version 1.1.0 don't have this yet: download the ZIP once more and extract it over the old folder.
+From the command line, `py server.py update` in the folder does the same download; then run `Install.bat` to restart it.
 
 ## On each phone
 1. Join the same Wi-Fi as the OBS PC and open the address.
