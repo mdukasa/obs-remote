@@ -19,6 +19,7 @@
   --r:14px; --gap:10px;
   --safe-b:env(safe-area-inset-bottom,0px); --safe-t:env(safe-area-inset-top,0px);
 }
+[hidden]{display:none!important}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overscroll-behavior:none}
 body{padding:calc(var(--safe-t) + 0px) 0 calc(68px + var(--safe-b))}
@@ -46,12 +47,18 @@ h2 button{font-size:12px;padding:4px 8px;text-transform:none;letter-spacing:0}
 .stick{position:sticky;top:52px;z-index:4;background:var(--bg);margin:0 -12px;padding:var(--gap) 12px;box-shadow:0 10px 12px -12px #000}
 .stick .mon{max-height:42vh;max-height:42dvh}
 .stick .camview{margin-top:0}
-#camMon{touch-action:pan-y}  /* sideways swipes switch camera (see selectCam), up/down still scrolls */
+#camMon{touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#camMon img{-webkit-user-drag:none;pointer-events:none}
+#camMon{will-change:transform}
+#tabCam .stick{overflow:hidden}  /* the picture slides within its strip */
+.peek{position:absolute;top:50%;transform:translateY(-50%);font-weight:700;font-size:15px;color:var(--text);opacity:0;pointer-events:none;white-space:nowrap}
+.peek.r{right:24px}.peek.l{left:24px}  /* sideways swipes switch camera (see selectCam), up/down still scrolls */
 @media (max-height:500px){.stick{position:static;box-shadow:none}}  /* phone on its side: no room to pin it */
 .monitors{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
 .monitors.single{grid-template-columns:1fr}
 .mon{position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:16/9;border:2px solid var(--line)}
 .mon img{width:100%;height:100%;object-fit:contain;display:block}
+.mon img:not([src]){visibility:hidden}  /* cleared picture (camera switched/offline): no broken-image icon */
 .mon .lab{position:absolute;left:6px;top:6px;font-size:11px;font-weight:700;padding:2px 6px;border-radius:6px;background:#000a}
 .mon .fps{position:absolute;right:6px;top:6px;font-size:10px;font-weight:600;padding:1px 5px;border-radius:5px;background:#000a;color:#fffb;font-variant-numeric:tabular-nums}
 .mon .fps:empty{display:none}
@@ -240,7 +247,7 @@ details.grp .grpb>.field:first-child,details.grp .grpb>div:first-child{margin-to
       <button id="btnAss" role="switch" aria-checked="false" aria-label="Auto scene switching"><span></span></button>
     </div>
     <div class="stats" id="stats"></div>
-    <h2>Audio <button id="btnAllAudio">Show all</button></h2>
+    <h2 id="audioHead">Audio <button id="btnAllAudio">Show all</button></h2>
     <div class="audio" id="audio"></div>
   </div>
 
@@ -250,6 +257,7 @@ details.grp .grpb>.field:first-child,details.grp .grpb>div:first-child{margin-to
       <div class="chips" id="cams"></div>
     </section>
     <div class="stick">
+      <span class="peek" id="camPeek"></span>
       <div class="mon camview" id="camMon"><img id="imgCam" alt=""><span class="tr"><span class="onair" id="onair" title="This camera is in the live program: moves will be seen">LIVE</span><span class="fps" id="imgCamFps"></span></span><span class="name" id="camState"></span></div>
     </div>
     <section style="margin-top:0">
@@ -372,7 +380,7 @@ const obs=new OBS();
 const S={scenes:[],program:"",preview:"",studio:false,stream:{},rec:{},audio:[],showAllAudio:false,
   devices:[],dev:store.get("dev",""),presets:{},thumbs:{},showAllPresets:false,liveSources:new Set(),
   speed:store.get("speed",0.5),hidden:new Set(store.get("hidden",[])),
-  quality:store.get("quality","balanced"),tab:"tabLive"};
+  showAudio:store.get("showAudio",true),quality:store.get("quality","balanced"),tab:"tabLive"};
 const cfg={host:store.get("host",location.hostname||"localhost"),port:store.get("port",4455),pw:store.get("pw","")};
 
 /* ---------- connection ---------- */
@@ -511,10 +519,22 @@ async function loadAudio(){
   const aud=cand.filter((_,k)=>keep[k]);
   const mutes=await Promise.all(aud.map(i=>obs.call("GetInputMute",{inputName:i.inputName}).then(r=>r.inputMuted).catch(()=>null)));
   S.audio=aud.map((i,k)=>({name:i.inputName,muted:mutes[k],special:sp.has(i.inputName)})).filter(a=>a.muted!==null);
+  await loadMixerHidden();
   renderAudio();
 }
+// Sources hidden in OBS's own Audio Mixer stay hidden here too. obs-websocket can't see that flag, so the
+// server on the OBS PC reads it from the scene collection file (/api/mixer-hidden). Without the server: none.
+S.mixerHidden=new Set();
+async function loadMixerHidden(){
+  try{const {currentSceneCollectionName:c}=await obs.call("GetSceneCollectionList");
+    const r=await fetch("/api/mixer-hidden?collection="+encodeURIComponent(c),{cache:"no-store"});
+    if(r.ok)S.mixerHidden=new Set((await r.json()).hidden||[])}catch{}
+}
+// OBS writes the file when it saves the collection, so look again now and then
+setInterval(()=>{if(obs.ready&&!document.hidden&&S.tab==="tabLive"&&S.showAudio&&S.audio)loadMixerHidden().then(renderAudio)},30000);
 function renderAudio(){
-  const list=S.audio.filter(a=>S.showAllAudio||a.special||S.liveSources.has(a.name));
+  $("audioHead").hidden=$("audio").hidden=!S.showAudio;  // Settings → Live tab → Audio
+  const list=S.audio.filter(a=>!S.mixerHidden.has(a.name)&&(S.showAllAudio||a.special||S.liveSources.has(a.name)));
   $("btnAllAudio").textContent=S.showAllAudio?"Live only":"Show all";
   const bar=`<div class="mbar"><i class="cv"></i><i class="hd"></i></div>`;
   $("audio").innerHTML=list.length?list.map(a=>`<div class="arow"><div class="ainfo"><div class="atop"><span class="n">${esc(a.name)}</span><span class="db">−∞ dB</span></div>
@@ -528,7 +548,7 @@ $("audio").addEventListener("click",e=>{const b=e.target.closest("[data-mute]");
 // Only subscribed while the Live tab is on screen, so the phone isn't fed levels it doesn't show.
 const METERS=1<<16,LV={};
 const toDb=m=>m>0?20*Math.log10(m):-100;
-function syncMeters(){obs.reidentify((obs.subs&~METERS)|(S.tab==="tabLive"&&!document.hidden?METERS:0))}
+function syncMeters(){obs.reidentify((obs.subs&~METERS)|(S.tab==="tabLive"&&!document.hidden&&S.showAudio?METERS:0))}
 obs.on("InputVolumeMeters",d=>{const now=performance.now();
   for(const i of d.inputs){const L=LV[i.inputName]??={ch:[{db:-100,hold:-100,holdT:0},{db:-100,hold:-100,holdT:0}],at:0};
     const chs=i.inputLevelsMul;if(!chs.length)continue;L.at=now;
@@ -562,12 +582,14 @@ obs.on("SourceFilterSettingsChanged",d=>{const dev=S.devices.find(x=>x.source===
 const FPS={smooth:25,balanced:10,saver:2};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const shotErr={},fpsCount={};
-async function frame(src,imgId,w,q){
+async function frame(src,imgId,w,q,still){
   if(!src||(shotErr[src]&&performance.now()-shotErr[src]<1500))return; // e.g. camera offline: retry slowly
   let r;try{r=await obs.call("GetSourceScreenshot",{sourceName:src,imageFormat:"jpg",imageWidth:w,imageCompressionQuality:q})}
   catch{shotErr[src]=performance.now();return}
   delete shotErr[src];
   const im=new Image();im.src=r.imageData;try{await im.decode()}catch{return}
+  // the user may have switched camera while this frame was on its way: don't show the old camera
+  if(still&&!still())return;
   const old=$(imgId);if(!old)return;im.id=imgId;im.alt="";old.replaceWith(im);
   fpsCount[imgId]=(fpsCount[imgId]||0)+1;
 }
@@ -576,7 +598,7 @@ async function shotLoop(){
     if(!obs.ready||document.hidden){await sleep(300);continue}
     const t0=performance.now();
     if(S.tab==="tabLive")await Promise.all([frame(S.program,"imgPgm",480,55),S.studio&&frame(S.preview,"imgPvw",480,55)]);
-    else{const d=curDev();if(d)await frame(picOf(d),"imgCam",640,62)}
+    else{const d=curDev();if(d){const src=picOf(d);await frame(src,"imgCam",640,62,()=>S.tab!=="tabLive"&&picOf(curDev())===src)}}
     const wait=1000/(FPS[S.quality]||25)-(performance.now()-t0);
     await sleep(Math.max(wait,4));
   }
@@ -656,19 +678,40 @@ function selectCam(dev){
   $("cams").querySelector(".chip.sel")?.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"});
 }
 $("cams").addEventListener("click",e=>{const b=e.target.closest("[data-dev]");if(b)selectCam(b.dataset.dev)});
-// Swipe the camera picture left/right for the next/previous camera (wraps round). Only a quick, mostly
-// sideways swipe counts, so scrolling the page over the picture still works. It never moves a camera.
+// Swipe the camera picture left/right for the next/previous camera (wraps round). Pointer events, so it
+// works with a finger, pen or mouse. Only a mostly sideways move counts; up/down still scrolls the page
+// (touch-action:pan-y hands vertical moves to the browser, which then cancels the pointer). Never moves a camera.
+// The picture follows the finger; the name of the camera it will switch to peeks in from the side. Let go past
+// a quarter of the width (or flick) to switch, otherwise it springs back. Only transform/opacity change, once
+// per frame, so the browser does it on the GPU without re-layout.
 (()=>{
-  const mon=$("camMon");let sx=0,sy=0,st=0,on=false;
-  mon.addEventListener("touchstart",e=>{if(e.touches.length!==1){on=false;return}
-    sx=e.touches[0].clientX;sy=e.touches[0].clientY;st=Date.now();on=true},{passive:true});
-  mon.addEventListener("touchend",e=>{if(!on)return;on=false;
-    const t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;
-    if(Math.abs(dx)<50||Math.abs(dx)<Math.abs(dy)*1.5||Date.now()-st>800||S.devices.length<2)return;
-    const i=S.devices.findIndex(d=>d.device===S.dev),n=S.devices.length,dir=dx<0?1:-1;
-    selectCam(S.devices[((i<0?0:i)+dir+n)%n].device);
-    mon.animate([{transform:`translateX(${dir*-40}px)`,opacity:.3},{transform:"none",opacity:1}],{duration:220,easing:"ease-out"});
-  },{passive:true});
+  const mon=$("camMon"),peek=$("camPeek");let sx=0,sy=0,id=null,drag=false,dx=0,raf=0,vx=0,lx=0,lt=0,busy=false;
+  $("imgCam").draggable=false;
+  const target=dir=>{const n=S.devices.length,i=Math.max(0,S.devices.findIndex(d=>d.device===S.dev));return S.devices[(i+dir+n)%n]};
+  const paint=()=>{raf=0;const w=mon.offsetWidth||1,x=S.devices.length<2?dx*.25:dx;  // one camera: rubber band
+    mon.style.transform=`translateX(${x}px)`;mon.style.opacity=String(1-Math.min(.5,Math.abs(x)/w*.6));
+    const t=S.devices.length>1&&Math.abs(x)>12?target(x<0?1:-1):null;
+    peek.textContent=t?(x<0?`${nameOf(t)} ›`:`‹ ${nameOf(t)}`):"";peek.className="peek "+(x<0?"r":"l");
+    peek.style.opacity=t?String(Math.min(1,Math.abs(x)/(w*.25))):"0"};
+  const settle=async(to,ms)=>{const from=mon.style.transform||"none",fo=mon.style.opacity||"1";
+    const a=mon.animate([{transform:from,opacity:fo},{transform:to,opacity:to==="none"?1:.4}],{duration:ms,easing:"cubic-bezier(.2,.8,.2,1)"});
+    mon.style.transform=to==="none"?"":to;mon.style.opacity=to==="none"?"":".4";try{await a.finished}catch{}};
+  const end=async()=>{id=null;if(!drag)return;drag=false;if(raf){cancelAnimationFrame(raf);raf=0}
+    peek.style.opacity="0";const w=mon.offsetWidth||1,fast=Math.abs(vx)>.5&&Math.sign(vx)===Math.sign(dx);
+    if(S.devices.length<2||(Math.abs(dx)<w*.25&&!fast)){await settle("none",220);return}
+    busy=true;const dir=dx<0?1:-1;
+    await settle(`translateX(${-dir*w}px)`,140);              // old camera slides out...
+    selectCam(target(dir).device);
+    mon.style.transform=`translateX(${dir*w*.35}px)`;mon.style.opacity=".4";
+    await settle("none",240);busy=false};                     // ...new one slides in from the other side
+  mon.addEventListener("pointerdown",e=>{if(!e.isPrimary||e.button>0||busy)return;id=e.pointerId;sx=lx=e.clientX;sy=e.clientY;
+    lt=e.timeStamp;dx=0;vx=0;drag=false;try{mon.setPointerCapture(id)}catch{}});
+  mon.addEventListener("pointermove",e=>{if(e.pointerId!==id)return;const mx=e.clientX-sx,my=e.clientY-sy;
+    if(!drag){if(Math.abs(mx)>8&&Math.abs(mx)>Math.abs(my))drag=true;else{if(Math.abs(my)>10)id=null;return}}
+    const dt=e.timeStamp-lt;if(dt>0)vx=.7*vx+.3*((e.clientX-lx)/dt);lx=e.clientX;lt=e.timeStamp;
+    dx=mx;if(!raf)raf=requestAnimationFrame(paint)});
+  mon.addEventListener("pointerup",e=>{if(e.pointerId===id)end()});
+  mon.addEventListener("pointercancel",e=>{if(e.pointerId===id){dx=0;end()}});
 })();
 obs.on("VendorEvent",d=>{
   if(d.vendorName!=="obs-ptz")return;const ed=d.eventData||{};
@@ -842,6 +885,7 @@ const ICON={
   film:svgI('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>'),
   gauge:svgI('<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>'),
   leaf:svgI('<path d="M5 20c0-9 6-15 15-15 0 9-6 15-15 15z"/><path d="M5 20l7-7"/>'),
+  speaker:svgI('<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>'),
   studio:svgI('<rect x="2" y="6" width="9" height="7" rx="1.5"/><rect x="13" y="6" width="9" height="7" rx="1.5"/><path d="M5 17h14M15 15l2 2-2 2"/>'),
   shuffle:svgI('<path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>'),
   eye:svgI('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
@@ -864,9 +908,10 @@ function openSettings(force){
     <div class="sub">Picture</div>
     <div class="seg">${qual.map(([v,t,s,i])=>`<label><input type="radio" name="sQ" value="${v}"${(S.quality||"balanced")===v?" checked":""}><span>${i}<b>${t}</b><small>${s}</small></span></label>`).join("")}</div>
     <div class="note">Smooth uses about 5 Mbit/s of Wi-Fi while the Live tab is open. Use Data saver on mobile data.</div>`)}
-    ${grp(ICON.monitor,"Live tab",S.scenes.length?`${shown} of ${S.scenes.length} scenes shown`:"Scenes and switches",false,`
+    ${grp(ICON.monitor,"Live tab",[S.scenes.length&&`${shown} of ${S.scenes.length} scenes`,S.showAudio?"":"audio hidden"].filter(Boolean).join(" · ")||"Scenes, audio and switches",false,`
     ${obs.ready?tog("sStudio",S.studio,ICON.studio,"Studio Mode","Preview a scene first, then TAKE it to program. Changes OBS itself, for everyone"):""}
     ${S.ass!==null?tog("sShowAss",S.showAss,ICON.shuffle,"Auto scene switching","Show the Advanced Scene Switcher switch"):""}
+    ${tog("sShowAudio",S.showAudio,ICON.speaker,"Audio","Show the audio section: mute buttons and sound meters")}
     ${S.scenes.length?`<div class="sub">Scenes on the phone <span id="sShown">${shown} of ${S.scenes.length}</span></div><div class="scns">${hideRows}</div>`:""}`)}
     ${S.devices.length?grp(ICON.camera,"Cameras",`${S.devices.length} PTZ camera${S.devices.length>1?"s":""}`,false,`<div id="sFix"></div>
     <div class="field"><label>Name shown in the app, and which OBS source gives the picture. Saved in OBS for every phone; cameras are listed in name order.</label></div>
@@ -877,7 +922,8 @@ function openSettings(force){
     <div class="btns${force?" one":""}">${force?"":"<button data-close>Close</button>"}<button class="primary" id="sSave">Save &amp; connect</button></div>`,
     close=>{renderUpd();checkUpdate();loadAutofix();
       document.querySelectorAll("[data-hide]").forEach(c=>c.onchange=()=>{const a=document.querySelectorAll("[data-hide]");
-        $("sShown").textContent=`${[...a].filter(x=>x.checked).length} of ${a.length}`});$("sSave").onclick=async()=>{
+        $("sShown").textContent=`${[...a].filter(x=>x.checked).length} of ${a.length}`});
+      $("sSave").onclick=async()=>{
       cfg.host=$("sHost").value.trim();cfg.port=+$("sPort").value||4455;cfg.pw=$("sPw").value;
       store.set("host",cfg.host);store.set("port",cfg.port);store.set("pw",cfg.pw);
       S.quality=document.querySelector("input[name=sQ]:checked")?.value||S.quality;store.set("quality",S.quality);
@@ -886,6 +932,7 @@ function openSettings(force){
       if($("sShowAss")){S.showAss=$("sShowAss").checked;store.set("showAss",S.showAss);renderAss()}
       document.querySelectorAll("[data-hide]").forEach(c=>c.checked?S.hidden.delete(c.dataset.hide):S.hidden.add(c.dataset.hide));
       store.set("hidden",[...S.hidden]);renderScenes();
+      S.showAudio=$("sShowAudio").checked;store.set("showAudio",S.showAudio);renderAudio();syncMeters();
       if(S.devices.length&&obs.ready){
         const c={names:{...(S.camCfg?.names||{})},pictures:{...(S.camCfg?.pictures||{})}};
         const put=(o,k,v)=>{if(v)o[k]=v;else delete o[k]};

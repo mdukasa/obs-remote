@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -127,6 +128,34 @@ def install_update(tag=None):
     return new_version
 
 
+SCENES_DIR = os.path.join(os.environ.get("APPDATA", ""), "obs-studio", "basic", "scenes")
+_mixer = {}  # path -> (mtime, collection name, hidden source names)
+
+
+def mixer_hidden(collection):
+    """Audio sources hidden in OBS's Audio Mixer (right-click > Hide) in this scene collection.
+    obs-websocket doesn't expose that flag; OBS keeps it in the scene collection file as the source's
+    private_settings.mixer_hidden. The file is rewritten whenever OBS saves the collection."""
+    try:
+        files = [os.path.join(SCENES_DIR, f) for f in os.listdir(SCENES_DIR) if f.lower().endswith(".json")]
+    except OSError:
+        return []
+    for path in files:
+        try:
+            mtime = os.path.getmtime(path)
+            if path not in _mixer or _mixer[path][0] != mtime:
+                with open(path, encoding="utf-8") as f:
+                    d = json.load(f)
+                names = [s.get("name") for s in d.get("sources", [])
+                         if (s.get("private_settings") or {}).get("mixer_hidden")]
+                _mixer[path] = (mtime, d.get("name"), names)
+            if _mixer[path][1] == collection:
+                return _mixer[path][2]
+        except (OSError, ValueError, AttributeError):
+            continue
+    return []
+
+
 RESTART = threading.Event()
 
 
@@ -171,6 +200,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                         "blocked": update_blocker()})
         if self.path.split("?")[0] == "/api/autofix":
             return self.send_json(200, {**autofix.STATE, "events": list(autofix.EVENTS)})
+        if self.path.split("?")[0] == "/api/mixer-hidden":
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            return self.send_json(200, {"hidden": mixer_hidden((q.get("collection") or [""])[0])})
         return super().do_GET()
 
     def do_POST(self):
