@@ -5,6 +5,7 @@ server only hands out the files in www/. Python standard library only.
 
     python server.py            # serves on port 8765
     python server.py 9000       # another port
+    python server.py update     # download the latest version from GitHub into this folder, then exit
 """
 import functools
 import http.server
@@ -20,7 +21,8 @@ import time
 import urllib.request
 import zipfile
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("OBS_REMOTE_PORT", "8765"))
+UPDATE_ONLY = len(sys.argv) > 1 and sys.argv[1].lower() == "update"
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 and not UPDATE_ONLY else int(os.environ.get("OBS_REMOTE_PORT", "8765"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "www")
 
@@ -187,6 +189,14 @@ def lan_ips():
         pass
     return ips or ["127.0.0.1"]
 
+
+if __name__ == "__main__" and UPDATE_ONLY:
+    why = update_blocker()
+    if why:
+        sys.exit(why)
+    print(f"Updating OBS Remote {local_version()} from GitHub...")
+    print(f"Now at version {install_update()}. Run Install.bat to restart it.")
+    sys.exit(0)
 
 if __name__ == "__main__":
     srv = None

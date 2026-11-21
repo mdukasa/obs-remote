@@ -68,4 +68,5 @@ Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz
   It never touches `Phone address.txt`. Then it frees the port and starts a fresh `server.py`, which retries the port for up to 10 s.
 - Downloads go through Python's TLS first. If certificate verification fails, they fall back to Windows' `curl.exe`, which uses the Windows certificate store.
   This was seen with GitHub's newer Let's Encrypt chain, which Python couldn't complete.
+- `python server.py update` does the same download from the command line and exits. Run `Install.bat` afterwards to restart the server.
 - The page checks `/api/version` when it loads, when Settings opens and every 6 hours. When the server reports an update, it shows a dot on ⚙.
