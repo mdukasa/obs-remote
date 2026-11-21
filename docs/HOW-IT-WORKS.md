@@ -54,6 +54,13 @@ Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz
 - `setup/install.ps1` finds Python 3.8+ (or offers `winget install Python.Python.3.12`) and reads OBS's websocket config.
   It detects whether obs-ptz has websocket support by looking for `ptz_list_devices` in the DLL, then opens the firewall.
   It starts `pythonw server.py` and adds a Startup shortcut.
+  Then it finds this PC's local-network IPv4 addresses, best route first.
+  Virtual adapters (Hyper-V, WSL, VirtualBox, VMware, Docker) and VPNs (Tailscale, ZeroTier, WireGuard, …) are skipped, matched on the adapter name and description.
+  It prints a QR code for the first address and writes `Phone address.txt` and `Phone address.html`. An update never touches these files.
+- `setup/qr.py` is a standard-library QR encoder: byte mode, error correction level M, versions 1-10 (up to 213 bytes).
+  `--rows URL` prints the matrix as 0/1 lines, which the installer draws in the console with half-block characters, black on white.
+  `--html` writes the page with SVG codes. It was checked by decoding hundreds of random URLs with OpenCV.
+- `install.ps1` must stay ASCII-only: Windows PowerShell 5.1 reads BOM-less scripts in the ANSI code page. That's why the block characters are built with `[char]`.
   Switches: `-Port`, `-SkipFirewall`, `-SkipStartup`.
 - `setup/firewall.ps1` runs elevated. It adds two inbound TCP rules (page port and OBS websocket port), limited to `RemoteAddress LocalSubnet`, or removes them with `-Remove`.
 - `setup/uninstall.ps1` stops the server, removes the shortcut and removes the rules.

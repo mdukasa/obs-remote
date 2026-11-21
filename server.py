@@ -34,7 +34,7 @@ REPO = "mdukasa/obs-remote"
 LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/tags/"  # + tag
 API_HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "obs-remote"}
-KEEP = {"Phone address.txt"}  # local files an update never touches
+KEEP = {"Phone address.txt", "Phone address.html"}  # local files an update never touches
 _latest = {"at": 0.0, "release": None}
 
 

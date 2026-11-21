@@ -18,7 +18,8 @@ Control OBS Studio and your PTZ cameras from a phone on the same Wi-Fi. No app s
 3. **Download** this project: the green **Code** button → **Download ZIP**. Extract it somewhere permanent, e.g. `C:\OBS Remote`.
    (Don't run it from the Downloads folder or inside the ZIP.)
 4. **Double-click `Install.bat`.** Windows will ask once for admin permission to open the firewall to your local network. Say **Yes**.
-5. The window shows the address to open, e.g. `http://192.168.1.50:8765/`. It's also saved in `Phone address.txt`.
+5. The window shows a **QR code**: point the phone's camera at it and tap the link. The address is printed under it too, e.g. `http://192.168.1.50:8765/`.
+   To see the code again later, open `Phone address.html` next to `Install.bat`.
 
 The installer checks Python, OBS and obs-ptz, opens the firewall (local network only), starts the server and sets it to start whenever this PC signs in.
 Run `Install.bat` again any time to repair it.
