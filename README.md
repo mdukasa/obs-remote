@@ -2,8 +2,8 @@
 
 Control OBS Studio and your PTZ cameras from a phone on the same Wi-Fi. No app store and no account: it's a web page you add to your home screen.
 
-**Live tab:** preview and program pictures, tap a scene and press TAKE, start/stop the stream and recording, mute buttons with live sound meters.
-**Camera tab:** joystick pan/tilt, zoom and focus, presets with thumbnails, and a red ON AIR warning when the camera you're moving is live.
+**Live tab:** preview and program pictures, tap a scene and press TAKE, start/stop the stream and recording, mute buttons with live sound meters. If OBS has the [Advanced Scene Switcher](https://github.com/WarmUpTill/SceneSwitcher) plugin, an **Auto scene switching** switch turns its automatic switching on and off (hide it in Settings if you don't use it).
+**Camera tab:** joystick pan/tilt, zoom and focus, presets with thumbnails, and a red LIVE tag on the picture when the camera you're moving is live. Swipe the picture sideways to switch camera. The picture (and the Live tab's Preview/Program) stays in view while you scroll.
 
 ## What you need
 - A Windows PC running **OBS Studio 28 or newer** (it has the WebSocket server built in).
@@ -49,7 +49,7 @@ Tip: give the OBS PC a **fixed IP address** (a DHCP reservation in your router),
   If a camera's PTZ control is on a source with no picture (e.g. a hidden webcam source), the app automatically uses an active source whose name starts with the same name.
 - **Frozen NDI cameras:** some NDI cameras' pictures stall now and then, and OBS keeps showing the last frame. OBS Remote watches the NDI sources of your PTZ cameras and reconnects one automatically when its picture stops changing for about 20 seconds.
   Pictures that never move, like a slide, are left alone. Turn it off in Settings; each fix is listed there and logged in `autofix.log`.
-- **Picture quality:** Settings → Picture: *Smooth* (25 fps), *Balanced* (10) or *Data saver* (2). Smooth uses about 5 Mbit/s of Wi-Fi.
+- **Picture quality:** Settings → Connection → Picture: *Smooth* (25 fps), *Balanced* (10, the default) or *Data saver* (2). Smooth uses about 5 Mbit/s of Wi-Fi.
 
 ## Troubleshooting
 | Problem | Fix |

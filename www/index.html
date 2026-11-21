@@ -42,6 +42,12 @@ header .wrap{display:flex;align-items:center;gap:8px;height:52px}
 section{margin:12px 0}
 h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:16px 2px 8px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
 h2 button{font-size:12px;padding:4px 8px;text-transform:none;letter-spacing:0}
+/* the picture stays pinned under the header while the page scrolls (presets, scenes, audio) */
+.stick{position:sticky;top:52px;z-index:4;background:var(--bg);margin:0 -12px;padding:var(--gap) 12px;box-shadow:0 10px 12px -12px #000}
+.stick .mon{max-height:42vh;max-height:42dvh}
+.stick .camview{margin-top:0}
+#camMon{touch-action:pan-y}  /* sideways swipes switch camera (see selectCam), up/down still scrolls */
+@media (max-height:500px){.stick{position:static;box-shadow:none}}  /* phone on its side: no room to pin it */
 .monitors{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
 .monitors.single{grid-template-columns:1fr}
 .mon{position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:16/9;border:2px solid var(--line)}
@@ -68,6 +74,15 @@ h2 button{font-size:12px;padding:4px 8px;text-transform:none;letter-spacing:0}
 .outputs button small{font-weight:500;color:var(--dim);font-variant-numeric:tabular-nums}
 .outputs button.on{background:var(--red);border-color:var(--red);color:#fff}
 .outputs button.on small{color:#fffc}
+/* Advanced Scene Switcher on/off (only shown when OBS has the plugin) */
+.assrow{display:flex;align-items:center;gap:12px;margin-top:var(--gap);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.assrow[hidden]{display:none}
+.assrow>span{flex:1;font-weight:600;display:flex;flex-direction:column;gap:2px}
+.assrow small{font-size:12px;font-weight:500;color:var(--dim)}
+#btnAss{position:relative;width:54px;height:32px;padding:0;border-radius:999px;flex:none;transition:background .15s}
+#btnAss span{position:absolute;left:3px;top:3px;width:24px;height:24px;border-radius:50%;background:#c9d1d9;transition:transform .15s}
+#btnAss.on{background:var(--green);border-color:var(--green)}
+#btnAss.on span{transform:translateX(22px);background:#fff}
 .stats{font-size:12px;color:var(--dim);margin-top:8px;display:flex;gap:14px;flex-wrap:wrap}
 .audio{display:flex;flex-direction:column;gap:8px}
 .arow{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 8px 8px 12px}
@@ -89,8 +104,12 @@ h2 button{font-size:12px;padding:4px 8px;text-transform:none;letter-spacing:0}
 .chip{flex:none;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:999px;font-weight:600}
 .chip.sel{background:var(--blue);border-color:var(--blue);color:#fff}
 .chip .dot{width:8px;height:8px}
-.onair{display:none;margin-top:var(--gap);padding:8px 12px;border-radius:10px;background:#3b1416;border:1px solid var(--red);color:#ffb3b5;font-weight:600;font-size:13px}
-.onair.show{display:block}
+/* top-right corner of the camera picture: LIVE pill (camera is in the program) next to the fps count */
+.mon .tr{position:absolute;right:6px;top:6px;display:flex;gap:4px;align-items:center}
+.mon .tr .fps{position:static}
+.onair{display:none;font-size:10px;font-weight:800;letter-spacing:.06em;padding:1px 6px;border-radius:5px;background:var(--red);color:#fff;align-items:center;gap:4px}
+.onair::before{content:"";width:6px;height:6px;border-radius:50%;background:#fff}
+.onair.show{display:flex}
 .camview{margin-top:var(--gap)}
 .ctl{display:grid;grid-template-columns:1fr 92px;gap:var(--gap);margin-top:var(--gap);align-items:stretch}
 .pad{position:relative;aspect-ratio:1;max-width:300px;width:100%;align-self:center;margin:0 auto;border-radius:50%;background:radial-gradient(circle,var(--panel2) 0 30%,var(--panel) 31% 100%);border:1px solid var(--line);touch-action:none}
@@ -135,6 +154,47 @@ nav button.sel{color:var(--blue)}
 .sheet .btns.one{grid-template-columns:1fr}
 .sheet .danger{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
 .sheet .primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:700}
+/* settings groups */
+details.grp{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:var(--bg)}
+details.grp summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:12px 40px 12px 12px;position:relative}
+details.grp summary>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.gi{flex:none;width:34px;height:34px;border-radius:9px;background:#1f6feb26;color:var(--blue);display:flex;align-items:center;justify-content:center;font-style:normal}
+.gi svg{width:19px;height:19px}
+.sub{font-size:12px;color:var(--dim);font-weight:600;margin:14px 0 8px;display:flex;justify-content:space-between}
+.note{font-size:12px;color:var(--dim);margin:8px 0 4px}
+/* picture quality: three tiles */
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);cursor:pointer;text-align:center}
+.seg svg{width:22px;height:22px;color:var(--dim);margin-bottom:2px}
+.seg b{font-size:13px}.seg small{font-size:11px;color:var(--dim)}
+.seg input:checked+span{border-color:var(--blue);background:#1f6feb22;box-shadow:inset 0 0 0 1px var(--blue)}
+.seg input:checked+span svg{color:var(--blue)}
+/* on/off rows */
+.tog{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);margin-top:12px;cursor:pointer}
+.tog+.tog{margin-top:0}
+.tog>span{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tog small{font-size:12px;color:var(--dim)}
+.sw{appearance:none;-webkit-appearance:none;flex:none;width:46px;height:28px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);position:relative;cursor:pointer;transition:background .15s;margin:0}
+.sw::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#c9d1d9;transition:transform .15s}
+.sw:checked{background:var(--green);border-color:var(--green)}
+.sw:checked::after{transform:translateX(18px);background:#fff}
+/* scenes: eye on = shown on the phone */
+.scns{display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:40vh;overflow:auto}
+.scn{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);cursor:pointer;min-width:0}
+.scn input{position:absolute;opacity:0;pointer-events:none}
+.scn svg{width:18px;height:18px;flex:none;display:block}
+.scn .on{color:var(--green)}.scn .off{display:none;color:var(--dim)}
+.scn .nm{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scn:has(input:not(:checked)){background:transparent;border-style:dashed}
+.scn:has(input:not(:checked)) .on{display:none}.scn:has(input:not(:checked)) .off{display:block}
+.scn:has(input:not(:checked)) .nm{color:var(--dim);text-decoration:line-through}
+details.grp summary::-webkit-details-marker{display:none}
+details.grp summary::after{content:"";position:absolute;right:16px;top:50%;width:8px;height:8px;margin-top:-6px;border:solid var(--dim);border-width:0 2px 2px 0;transform:rotate(45deg);transition:transform .15s}
+details.grp[open] summary::after{transform:rotate(-135deg);margin-top:-2px}
+details.grp summary span{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+details.grp .grpb{padding:2px 14px 6px;border-top:1px solid var(--line)}
+details.grp .grpb>.field:first-child,details.grp .grpb>div:first-child{margin-top:12px}
 .field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .camrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.camrow .field{min-width:0}.camrow select{width:100%}
 .field label{font-size:12px;color:var(--dim)}
@@ -159,12 +219,12 @@ nav button.sel{color:var(--blue)}
 <main class="wrap">
   <!-- LIVE -->
   <div class="tab sel" id="tabLive">
-    <section>
-      <div class="monitors" id="monitors">
-        <div class="mon pvw" id="monPvw"><img id="imgPvw" alt=""><span class="lab">PREVIEW</span><span class="fps" id="imgPvwFps"></span><span class="name" id="namePvw"></span></div>
-        <div class="mon pgm"><img id="imgPgm" alt=""><span class="lab">PROGRAM</span><span class="fps" id="imgPgmFps"></span><span class="name" id="namePgm"></span></div>
-      </div>
-      <div class="take" id="takeRow">
+    <div class="stick"><div class="monitors" id="monitors">
+      <div class="mon pvw" id="monPvw"><img id="imgPvw" alt=""><span class="lab">PREVIEW</span><span class="fps" id="imgPvwFps"></span><span class="name" id="namePvw"></span></div>
+      <div class="mon pgm"><img id="imgPgm" alt=""><span class="lab">PROGRAM</span><span class="fps" id="imgPgmFps"></span><span class="name" id="namePgm"></span></div>
+    </div></div>
+    <section style="margin-top:0">
+      <div class="take" id="takeRow" style="margin-top:0">
         <button id="btnTake">TAKE ▶</button>
       </div>
     </section>
@@ -175,6 +235,10 @@ nav button.sel{color:var(--blue)}
       <button id="btnStream">Start stream<small id="streamT">—</small></button>
       <button id="btnRec">Start recording<small id="recT">—</small></button>
     </div>
+    <div class="assrow" id="assRow" hidden>
+      <span>Auto scene switching<small id="assT">Advanced Scene Switcher</small></span>
+      <button id="btnAss" role="switch" aria-checked="false" aria-label="Auto scene switching"><span></span></button>
+    </div>
     <div class="stats" id="stats"></div>
     <h2>Audio <button id="btnAllAudio">Show all</button></h2>
     <div class="audio" id="audio"></div>
@@ -182,10 +246,13 @@ nav button.sel{color:var(--blue)}
 
   <!-- CAMERA -->
   <div class="tab" id="tabCam">
-    <section>
+    <section style="margin-bottom:0">
       <div class="chips" id="cams"></div>
-      <div class="onair" id="onair">ON AIR — this camera is in the live program. Moves will be seen.</div>
-      <div class="mon camview" id="camMon"><img id="imgCam" alt=""><span class="fps" id="imgCamFps"></span><span class="name" id="camState"></span></div>
+    </section>
+    <div class="stick">
+      <div class="mon camview" id="camMon"><img id="imgCam" alt=""><span class="tr"><span class="onair" id="onair" title="This camera is in the live program: moves will be seen">LIVE</span><span class="fps" id="imgCamFps"></span></span><span class="name" id="camState"></span></div>
+    </div>
+    <section style="margin-top:0">
       <div class="ctl">
         <div class="pad" id="pad"><div class="knob" id="knob"></div></div>
         <div class="side">
@@ -305,7 +372,7 @@ const obs=new OBS();
 const S={scenes:[],program:"",preview:"",studio:false,stream:{},rec:{},audio:[],showAllAudio:false,
   devices:[],dev:store.get("dev",""),presets:{},thumbs:{},showAllPresets:false,liveSources:new Set(),
   speed:store.get("speed",0.5),hidden:new Set(store.get("hidden",[])),
-  directTap:store.get("directTap",false),quality:store.get("quality","smooth"),tab:"tabLive"};
+  quality:store.get("quality","balanced"),tab:"tabLive"};
 const cfg={host:store.get("host",location.hostname||"localhost"),port:store.get("port",4455),pw:store.get("pw","")};
 
 /* ---------- connection ---------- */
@@ -324,7 +391,7 @@ async function connect(){
 obs.on("close",()=>{setConn("err","Reconnecting…");retryT=setTimeout(connect,1000)});
 
 async function loadAll(){
-  await Promise.all([loadScenes(),loadOutputs(),loadAudio(),loadDevices(),loadTransitions()]).catch(fail);
+  await Promise.all([loadScenes(),loadOutputs(),loadAudio(),loadDevices(),loadTransitions(),loadAss()]).catch(fail);
 }
 
 /* ---------- scenes ---------- */
@@ -340,11 +407,11 @@ function renderScenes(){
   $("monitors").classList.toggle("single",!S.studio);$("monPvw").style.display=S.studio?"":"none";
   $("takeRow").style.display=S.studio?"":"none";
   $("namePgm").textContent=S.program;$("namePvw").textContent=S.preview;
-  $("sceneHint").textContent=S.studio?(S.directTap?"Scenes · tap = straight to program":"Scenes · tap = preview, then TAKE"):"Scenes · tap = go live";
+  $("sceneHint").textContent=S.studio?"Scenes · tap = preview, then TAKE":"Scenes · tap = go live";
 }
 $("scenes").addEventListener("click",e=>{
   const b=e.target.closest("[data-scene]");if(!b)return;const n=b.dataset.scene;buzz();
-  if(S.studio&&!S.directTap)obs.call("SetCurrentPreviewScene",{sceneName:n}).catch(fail);
+  if(S.studio)obs.call("SetCurrentPreviewScene",{sceneName:n}).catch(fail);
   else obs.call("SetCurrentProgramScene",{sceneName:n}).catch(fail);
 });
 // TAKE = studio-mode transition using OBS's selected transition (e.g. Fade 300 ms), shown on the button
@@ -405,6 +472,27 @@ $("btnStream").onclick=()=>S.stream.outputActive
 $("btnRec").onclick=()=>S.rec.outputActive
   ?confirmSheet("Stop recording?","The file will be finalised on the OBS PC.","Stop recording",true,()=>obs.call("StopRecord").then(r=>toast("Saved: "+(r.outputPath||"").split(/[\\/]/).pop())).catch(fail))
   :confirmSheet("Start recording?","Records to the OBS PC's recording folder.","Record",false,()=>obs.call("StartRecord").catch(fail));
+/* Advanced Scene Switcher (obs-advanced-scene-switcher plugin): start/stop its automatic scene switching.
+   S.ass = true/false when OBS has the plugin, null when it doesn't (the row stays hidden). */
+const ASS="AdvancedSceneSwitcher";S.ass=null;S.showAss=store.get("showAss",true);
+async function loadAss(){
+  try{S.ass=!!(await obs.call("CallVendorRequest",{vendorName:ASS,requestType:"IsAdvancedSceneSwitcherRunning",requestData:{}})).responseData?.isRunning}
+  catch{S.ass=null}
+  renderAss();
+}
+function renderAss(){
+  $("assRow").hidden=S.ass===null||!S.showAss;
+  $("btnAss").className=S.ass?"on":"";$("btnAss").setAttribute("aria-checked",String(!!S.ass));
+  $("assT").textContent=S.ass?"On: OBS switches scenes by itself":"Off: scenes change only when you switch them";
+}
+$("btnAss").onclick=()=>{
+  const on=!S.ass,go=()=>obs.call("CallVendorRequest",{vendorName:ASS,requestType:on?"AdvancedSceneSwitcherStart":"AdvancedSceneSwitcherStop",requestData:{}})
+    .then(()=>{S.ass=on;renderAss();toast(on?"Auto scene switching on":"Auto scene switching off")}).catch(fail).finally(()=>setTimeout(loadAss,800));
+  if(on&&S.stream?.outputActive)confirmSheet("Turn on auto scene switching?","You're live: Advanced Scene Switcher may change the program scene straight away, following its rules in OBS.","Turn on",false,go);
+  else go();
+};
+obs.on("VendorEvent",d=>{if(d.vendorName===ASS&&/^AdvancedSceneSwitcher(Started|Stopped)$/.test(d.eventType)){S.ass=d.eventType.endsWith("Started");renderAss()}});
+setInterval(()=>{if(obs.ready&&!document.hidden&&S.tab==="tabLive"&&S.ass!==null)loadAss()},10000);  // in case an event was missed
 obs.on("StreamStateChanged",()=>loadOutputs().catch(()=>{}));
 obs.on("RecordStateChanged",()=>loadOutputs().catch(()=>{}));
 setInterval(()=>{if(obs.ready&&!document.hidden&&S.tab==="tabLive")loadOutputs().catch(()=>{})},1000);
@@ -562,7 +650,26 @@ function renderCams(){
   }
   renderAudio();
 }
-$("cams").addEventListener("click",e=>{const b=e.target.closest("[data-dev]");if(!b)return;stopMove();S.dev=b.dataset.dev;store.set("dev",S.dev);$("imgCam").removeAttribute("src");renderCams();loadPresets()});
+function selectCam(dev){
+  if(!dev||dev===S.dev)return;
+  stopMove();S.dev=dev;store.set("dev",S.dev);$("imgCam").removeAttribute("src");renderCams();loadPresets();
+  $("cams").querySelector(".chip.sel")?.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"});
+}
+$("cams").addEventListener("click",e=>{const b=e.target.closest("[data-dev]");if(b)selectCam(b.dataset.dev)});
+// Swipe the camera picture left/right for the next/previous camera (wraps round). Only a quick, mostly
+// sideways swipe counts, so scrolling the page over the picture still works. It never moves a camera.
+(()=>{
+  const mon=$("camMon");let sx=0,sy=0,st=0,on=false;
+  mon.addEventListener("touchstart",e=>{if(e.touches.length!==1){on=false;return}
+    sx=e.touches[0].clientX;sy=e.touches[0].clientY;st=Date.now();on=true},{passive:true});
+  mon.addEventListener("touchend",e=>{if(!on)return;on=false;
+    const t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;
+    if(Math.abs(dx)<50||Math.abs(dx)<Math.abs(dy)*1.5||Date.now()-st>800||S.devices.length<2)return;
+    const i=S.devices.findIndex(d=>d.device===S.dev),n=S.devices.length,dir=dx<0?1:-1;
+    selectCam(S.devices[((i<0?0:i)+dir+n)%n].device);
+    mon.animate([{transform:`translateX(${dir*-40}px)`,opacity:.3},{transform:"none",opacity:1}],{duration:220,easing:"ease-out"});
+  },{passive:true});
+})();
 obs.on("VendorEvent",d=>{
   if(d.vendorName!=="obs-ptz")return;const ed=d.eventData||{};
   if(d.eventType==="ptz_state_changed"){const dev=S.devices.find(x=>x.device===ed.device||x.source===ed.source);
@@ -727,29 +834,56 @@ document.querySelectorAll("nav [data-tab]").forEach(b=>b.onclick=()=>{
   window.scrollTo(0,0)});
 
 /* ---------- settings ---------- */
+const svgI=d=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICON={
+  wifi:svgI('<path d="M2 8.8a15 15 0 0 1 20 0M5 12.4a10 10 0 0 1 14 0M8.5 15.9a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/>'),
+  monitor:svgI('<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>'),
+  camera:svgI('<path d="M15 10l5-3v10l-5-3z"/><rect x="3" y="6" width="12" height="12" rx="2"/>'),
+  film:svgI('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>'),
+  gauge:svgI('<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>'),
+  leaf:svgI('<path d="M5 20c0-9 6-15 15-15 0 9-6 15-15 15z"/><path d="M5 20l7-7"/>'),
+  studio:svgI('<rect x="2" y="6" width="9" height="7" rx="1.5"/><rect x="13" y="6" width="9" height="7" rx="1.5"/><path d="M5 17h14M15 15l2 2-2 2"/>'),
+  shuffle:svgI('<path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>'),
+  eye:svgI('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  eyeOff:svgI('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><path d="M3 3l18 18"/>'),
+};
 function openSettings(force){
-  const hideRows=S.scenes.map(n=>`<label class="check"><input type="checkbox" data-hide="${esc(n)}" ${S.hidden.has(n)?"":"checked"}>${esc(n)}</label>`).join("");
-  sheet(`<h3>Settings</h3><div id="sUpd"></div><div id="sFix"></div>
+  // scenes: tap the eye to show/hide a scene on the phone
+  const hideRows=S.scenes.map(n=>`<label class="scn"><input type="checkbox" data-hide="${esc(n)}" ${S.hidden.has(n)?"":"checked"}><span class="on">${ICON.eye}</span><span class="off">${ICON.eyeOff}</span><span class="nm">${esc(n)}</span></label>`).join("");
+  // Folded into groups so the sheet stays short; Connection opens by itself when the phone isn't connected.
+  const qName={smooth:"Smooth",balanced:"Balanced",saver:"Data saver"}[S.quality]||"Balanced";
+  const shown=S.scenes.filter(n=>!S.hidden.has(n)).length;
+  const grp=(icon,title,sub,open,body)=>`<details class="grp"${open?" open":""}><summary><i class="gi">${icon}</i><div><b>${title}</b><span>${sub}</span></div></summary><div class="grpb">${body}</div></details>`;
+  const tog=(id,on,icon,title,desc)=>`<label class="tog"><i class="gi">${icon}</i><span><b>${title}</b><small>${desc}</small></span><input type="checkbox" class="sw" id="${id}"${on?" checked":""}></label>`;
+  const qual=[["smooth","Smooth","25 fps",ICON.film],["balanced","Balanced","10 fps",ICON.gauge],["saver","Data saver","2 fps",ICON.leaf]];
+  sheet(`<h3>Settings</h3><div id="sUpd"></div>
+    ${grp(ICON.wifi,"Connection",`${obs.ready?`Connected to ${esc(cfg.host)}`:"Not connected"} · ${qName} picture`,force||!obs.ready,`
     <div class="field"><label>OBS PC address</label><input id="sHost" value="${esc(cfg.host)}" inputmode="url" autocapitalize="off"></div>
     <div class="field"><label>Websocket port</label><input id="sPort" value="${esc(cfg.port)}" inputmode="numeric"></div>
     <div class="field"><label>Websocket password (OBS → Tools → WebSocket Server Settings)</label><input id="sPw" type="password" value="${esc(cfg.pw)}" autocomplete="current-password"></div>
-    <div class="field"><label>Picture</label><select id="sQuality">
-      <option value="smooth"${S.quality==="smooth"?" selected":""}>Smooth — 25 fps (≈5 Mbit/s on the Live tab)</option>
-      <option value="balanced"${S.quality==="balanced"?" selected":""}>Balanced — 10 fps</option>
-      <option value="saver"${S.quality==="saver"?" selected":""}>Data saver — 2 fps</option></select></div>
-    ${S.scenes.length?`<label class="check"><input type="checkbox" id="sDirect" ${S.directTap?"checked":""}>Studio mode: tapping a scene sends it straight to program</label>
-    <div class="field"><label>Scenes shown on the phone</label></div><div class="hidelist">${hideRows}</div>`:""}
-    ${S.devices.length?`<div class="field"><label>PTZ cameras: name shown in the app, and which OBS source gives the picture. Saved in OBS for every phone; cameras are listed in name order.</label></div>
+    <div class="sub">Picture</div>
+    <div class="seg">${qual.map(([v,t,s,i])=>`<label><input type="radio" name="sQ" value="${v}"${(S.quality||"balanced")===v?" checked":""}><span>${i}<b>${t}</b><small>${s}</small></span></label>`).join("")}</div>
+    <div class="note">Smooth uses about 5 Mbit/s of Wi-Fi while the Live tab is open. Use Data saver on mobile data.</div>`)}
+    ${grp(ICON.monitor,"Live tab",S.scenes.length?`${shown} of ${S.scenes.length} scenes shown`:"Scenes and switches",false,`
+    ${obs.ready?tog("sStudio",S.studio,ICON.studio,"Studio Mode","Preview a scene first, then TAKE it to program. Changes OBS itself, for everyone"):""}
+    ${S.ass!==null?tog("sShowAss",S.showAss,ICON.shuffle,"Auto scene switching","Show the Advanced Scene Switcher switch"):""}
+    ${S.scenes.length?`<div class="sub">Scenes on the phone <span id="sShown">${shown} of ${S.scenes.length}</span></div><div class="scns">${hideRows}</div>`:""}`)}
+    ${S.devices.length?grp(ICON.camera,"Cameras",`${S.devices.length} PTZ camera${S.devices.length>1?"s":""}`,false,`<div id="sFix"></div>
+    <div class="field"><label>Name shown in the app, and which OBS source gives the picture. Saved in OBS for every phone; cameras are listed in name order.</label></div>
     ${S.devices.map(d=>{const cur=S.camCfg?.pictures?.[d.source]||"";return `<div class="camrow"><div class="field"><label>${esc(d.source)} · name</label><input data-name="${esc(d.source)}" value="${esc(S.camCfg?.names?.[d.source]||"")}" placeholder="${esc(d.source)}" autocapitalize="off"></div>
       <div class="field"><label>picture</label><select data-pic="${esc(d.source)}">
       <option value=""${cur?"":" selected"}>Automatic (${esc(d.auto||d.source)})</option>
-      ${(S.videoInputs||[]).map(n=>`<option value="${esc(n)}"${cur===n?" selected":""}>${esc(n)}</option>`).join("")}</select></div></div>`}).join("")}`:""}
+      ${(S.videoInputs||[]).map(n=>`<option value="${esc(n)}"${cur===n?" selected":""}>${esc(n)}</option>`).join("")}</select></div></div>`}).join("")}`):""}
     <div class="btns${force?" one":""}">${force?"":"<button data-close>Close</button>"}<button class="primary" id="sSave">Save &amp; connect</button></div>`,
-    close=>{renderUpd();checkUpdate();loadAutofix();$("sSave").onclick=async()=>{
+    close=>{renderUpd();checkUpdate();loadAutofix();
+      document.querySelectorAll("[data-hide]").forEach(c=>c.onchange=()=>{const a=document.querySelectorAll("[data-hide]");
+        $("sShown").textContent=`${[...a].filter(x=>x.checked).length} of ${a.length}`});$("sSave").onclick=async()=>{
       cfg.host=$("sHost").value.trim();cfg.port=+$("sPort").value||4455;cfg.pw=$("sPw").value;
       store.set("host",cfg.host);store.set("port",cfg.port);store.set("pw",cfg.pw);
-      S.quality=$("sQuality").value;store.set("quality",S.quality);
-      if($("sDirect")){S.directTap=$("sDirect").checked;store.set("directTap",S.directTap)}
+      S.quality=document.querySelector("input[name=sQ]:checked")?.value||S.quality;store.set("quality",S.quality);
+      if($("sStudio")&&$("sStudio").checked!==!!S.studio&&obs.ready)
+        await obs.call("SetStudioModeEnabled",{studioModeEnabled:$("sStudio").checked}).catch(fail);
+      if($("sShowAss")){S.showAss=$("sShowAss").checked;store.set("showAss",S.showAss);renderAss()}
       document.querySelectorAll("[data-hide]").forEach(c=>c.checked?S.hidden.delete(c.dataset.hide):S.hidden.add(c.dataset.hide));
       store.set("hidden",[...S.hidden]);renderScenes();
       if(S.devices.length&&obs.ready){
