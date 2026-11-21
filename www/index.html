@@ -36,6 +36,9 @@ header .wrap{display:flex;align-items:center;gap:8px;height:52px}
 .pill.rec{background:#7a1d20;border-color:var(--red);color:#fff}
 .pill .b{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.7}
 .icon-btn{padding:8px 10px;border-radius:10px;background:transparent;border:none;font-size:20px;line-height:1}
+.icon-btn.badge{position:relative}.icon-btn.badge::after{content:"";position:absolute;top:6px;right:6px;width:9px;height:9px;border-radius:50%;background:var(--amber)}
+.upd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:14px}
+.upd span{font-size:13px;color:var(--dim)}.upd b{color:var(--text,inherit)}.upd button{padding:8px 12px;white-space:nowrap}
 section{margin:12px 0}
 h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:16px 2px 8px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
 h2 button{font-size:12px;padding:4px 8px;text-transform:none;letter-spacing:0}
@@ -726,7 +729,7 @@ document.querySelectorAll("nav [data-tab]").forEach(b=>b.onclick=()=>{
 /* ---------- settings ---------- */
 function openSettings(force){
   const hideRows=S.scenes.map(n=>`<label class="check"><input type="checkbox" data-hide="${esc(n)}" ${S.hidden.has(n)?"":"checked"}>${esc(n)}</label>`).join("");
-  sheet(`<h3>Settings</h3>
+  sheet(`<h3>Settings</h3><div id="sUpd"></div>
     <div class="field"><label>OBS PC address</label><input id="sHost" value="${esc(cfg.host)}" inputmode="url" autocapitalize="off"></div>
     <div class="field"><label>Websocket port</label><input id="sPort" value="${esc(cfg.port)}" inputmode="numeric"></div>
     <div class="field"><label>Websocket password (OBS → Tools → WebSocket Server Settings)</label><input id="sPw" type="password" value="${esc(cfg.pw)}" autocomplete="current-password"></div>
@@ -742,7 +745,7 @@ function openSettings(force){
       <option value=""${cur?"":" selected"}>Automatic (${esc(d.auto||d.source)})</option>
       ${(S.videoInputs||[]).map(n=>`<option value="${esc(n)}"${cur===n?" selected":""}>${esc(n)}</option>`).join("")}</select></div></div>`}).join("")}`:""}
     <div class="btns${force?" one":""}">${force?"":"<button data-close>Close</button>"}<button class="primary" id="sSave">Save &amp; connect</button></div>`,
-    close=>{$("sSave").onclick=async()=>{
+    close=>{renderUpd();checkUpdate();$("sSave").onclick=async()=>{
       cfg.host=$("sHost").value.trim();cfg.port=+$("sPort").value||4455;cfg.pw=$("sPw").value;
       store.set("host",cfg.host);store.set("port",cfg.port);store.set("pw",cfg.pw);
       S.quality=$("sQuality").value;store.set("quality",S.quality);
@@ -761,6 +764,32 @@ function openSettings(force){
   if(force)$("scrim").dataset.lock="1";else delete $("scrim").dataset.lock;
 }
 $("btnSettings").onclick=()=>openSettings(false);
+
+/* ---------- self-update ----------
+   server.py compares its VERSION with the one on GitHub and, on request, downloads main and restarts itself.
+   OBS isn't touched. A page served some other way has no /api and this stays hidden. */
+S.upd=null;
+async function checkUpdate(){
+  try{const r=await fetch("/api/version",{cache:"no-store"});S.upd=r.ok?await r.json():null}catch{S.upd=null}
+  $("btnSettings").classList.toggle("badge",!!(S.upd?.update&&!S.upd.blocked));renderUpd()}
+function renderUpd(){
+  const el=$("sUpd"),u=S.upd;if(!el)return;if(!u){el.innerHTML="";return}
+  el.innerHTML=`<div class="upd"><span><b>OBS Remote ${esc(u.version)}</b><br>${
+    u.update?(u.blocked?`${esc(u.latest)} is available. ${esc(u.blocked)}`:`Version ${esc(u.latest)} is available.`)
+    :u.latest?"Up to date.":"Couldn't check for updates. Is the OBS PC online?"}</span>${
+    u.update&&!u.blocked?`<button class="primary" id="sUpdate">Update</button>`:""}</div>`;
+  if($("sUpdate"))$("sUpdate").onclick=()=>confirmSheet(`Update to ${u.latest}?`,
+    "The OBS PC downloads the new version from GitHub and restarts the app's web server. OBS itself keeps running. Phones reload in a few seconds.",
+    "Update",false,runUpdate)}
+async function runUpdate(){
+  toast("Updating…");
+  let j={};try{const r=await fetch("/api/update",{method:"POST",headers:{"X-OBS-Remote":"1"}});j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"Update failed")}
+  catch(e){toast(e.message||"Update failed",true);return}
+  toast(`Updated to ${j.version}. Reloading…`);
+  for(let i=0;i<40;i++){await sleep(1000); // wait for the restarted server, then load the new page
+    try{const v=await (await fetch("/api/version",{cache:"no-store"})).json();if(v.version===j.version){location.reload();return}}catch{}}
+  toast("The app server didn't come back. Run Install.bat on the OBS PC.",true)}
+checkUpdate();setInterval(checkUpdate,6*3600e3);
 
 /* ---------- go ---------- */
 renderOutputs();syncMeters();

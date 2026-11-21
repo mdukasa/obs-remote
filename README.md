@@ -21,7 +21,12 @@ Control OBS Studio and your PTZ cameras from a phone on the same Wi-Fi. No app s
 5. The window shows the address to open, e.g. `http://192.168.1.50:8765/`. It's also saved in `Phone address.txt`.
 
 The installer checks Python, OBS and obs-ptz, opens the firewall (local network only), starts the server and sets it to start whenever this PC signs in.
-Run `Install.bat` again any time to repair or update.
+Run `Install.bat` again any time to repair it.
+
+## Updating
+When a new version is out, a dot appears on the ⚙ button. Open Settings and tap **Update**.
+The OBS PC downloads the new version from GitHub and restarts the app's web server, and phones reload by themselves a few seconds later. OBS itself keeps running.
+Copies installed before version 1.1.0 don't have this yet: download the ZIP once more and extract it over the old folder.
 
 ## On each phone
 1. Join the same Wi-Fi as the OBS PC and open the address.

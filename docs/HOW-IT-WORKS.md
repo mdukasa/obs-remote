@@ -57,3 +57,15 @@ Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz
   Switches: `-Port`, `-SkipFirewall`, `-SkipStartup`.
 - `setup/firewall.ps1` runs elevated. It adds two inbound TCP rules (page port and OBS websocket port), limited to `RemoteAddress LocalSubnet`, or removes them with `-Remove`.
 - `setup/uninstall.ps1` stops the server, removes the shortcut and removes the rules.
+
+## Updates
+- `VERSION` holds the release number. **Bump it with every change pushed to `main`**, or installed copies won't see the update.
+- `GET /api/version` returns `{version, latest, update, blocked}`.
+  `latest` is read from `raw.githubusercontent.com/mdukasa/obs-remote/main/VERSION` and cached for 10 minutes.
+  `blocked` is set when the folder is a git checkout, because those update with `git pull`.
+- `POST /api/update` needs the header `X-OBS-Remote: 1`. A cross-site page can't send it without a CORS preflight, which the server never allows.
+  It downloads the `main` ZIP from codeload.github.com, checks that it is OBS Remote, and copies it over the folder, never outside it.
+  It never touches `Phone address.txt`. Then it frees the port and starts a fresh `server.py`, which retries the port for up to 10 s.
+- Downloads go through Python's TLS first. If certificate verification fails, they fall back to Windows' `curl.exe`, which uses the Windows certificate store.
+  This was seen with GitHub's newer Let's Encrypt chain, which Python couldn't complete.
+- The page checks `/api/version` when it loads, when Settings opens and every 6 hours. When the server reports an update, it shows a dot on ⚙.

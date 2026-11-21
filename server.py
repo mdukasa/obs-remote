@@ -8,12 +8,119 @@ server only hands out the files in www/. Python standard library only.
 """
 import functools
 import http.server
+import io
+import json
 import os
+import shutil
 import socket
+import subprocess
 import sys
+import threading
+import time
+import urllib.request
+import zipfile
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("OBS_REMOTE_PORT", "8765"))
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "www")
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.join(HERE, "www")
+
+# Updates come only from this repository's main branch, over HTTPS.
+REPO = "mdukasa/obs-remote"
+LATEST_URL = f"https://raw.githubusercontent.com/{REPO}/main/VERSION"
+ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/heads/main"
+KEEP = {"Phone address.txt"}  # local files an update never touches
+_latest = {"at": 0.0, "version": None}
+
+
+def fetch(url, timeout):
+    """GET a URL. Python's own TLS can fail on Windows when a site's certificate chain needs an intermediate that
+    Windows would fetch by itself (seen with GitHub's Let's Encrypt chain), so fall back to Windows' curl.exe,
+    which uses the Windows certificate store."""
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return r.read()
+    except OSError as e:
+        if os.name != "nt" or "CERTIFICATE" not in str(e).upper():
+            raise
+    curl = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "curl.exe")
+    p = subprocess.run([curl, "-fsSL", "--max-time", str(timeout), url], capture_output=True,
+                       creationflags=0x08000000)  # CREATE_NO_WINDOW: no console flash under pythonw
+    if p.returncode:
+        raise OSError(p.stderr.decode("utf-8", "replace").strip() or f"curl exit {p.returncode}")
+    return p.stdout
+
+
+def local_version():
+    try:
+        with open(os.path.join(HERE, "VERSION"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return "0"
+
+
+def vtuple(v):
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except (AttributeError, ValueError):
+        return (0,)
+
+
+def latest_version():
+    """Newest version on GitHub, cached for 10 minutes. None if GitHub can't be reached."""
+    if time.time() - _latest["at"] > 600 or _latest["version"] is None:
+        try:
+            _latest["version"] = fetch(LATEST_URL, 8)[:64].decode("utf-8", "replace").strip() or None
+        except OSError:
+            _latest["version"] = None
+        _latest["at"] = time.time()
+    return _latest["version"]
+
+
+def update_blocker():
+    """Why this copy can't update itself, or None."""
+    if os.path.isdir(os.path.join(HERE, ".git")):
+        return "This copy is a git checkout. Update it with git pull."
+    return None
+
+
+def install_update():
+    """Download main from GitHub and copy it over this folder. Returns the new version."""
+    data = fetch(ZIP_URL, 60)
+    z = zipfile.ZipFile(io.BytesIO(data))
+    names = z.namelist()
+    top = names[0].split("/")[0] + "/"  # GitHub zips have one top folder, e.g. obs-remote-main/
+    if not all(n.startswith(top) for n in names) or top + "server.py" not in names or top + "www/index.html" not in names:
+        raise RuntimeError("The download doesn't look like OBS Remote.")
+    new_version = z.read(top + "VERSION").decode("utf-8").strip() if top + "VERSION" in names else "?"
+    for n in names:
+        rel = n[len(top):]
+        if not rel or rel in KEEP or rel.startswith(".git/"):
+            continue
+        dest = os.path.normpath(os.path.join(HERE, rel))
+        if not dest.startswith(HERE + os.sep):
+            continue  # never write outside this folder
+        if n.endswith("/"):
+            os.makedirs(dest, exist_ok=True)
+            continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        tmp = dest + ".new"
+        with z.open(n) as src, open(tmp, "wb") as out:
+            shutil.copyfileobj(src, out)
+        os.replace(tmp, dest)
+    return new_version
+
+
+def restart_later(srv):
+    """Free the port, then start a fresh copy of this server (the new server.py) and exit."""
+    def go():
+        time.sleep(0.5)  # let the reply reach the phone
+        srv.shutdown()
+        srv.server_close()
+        flags = 0x00000008 | 0x00000200 if os.name == "nt" else 0  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen([sys.executable, os.path.join(HERE, "server.py")] + sys.argv[1:], cwd=HERE,
+                         creationflags=flags, close_fds=True)
+        os._exit(0)
+    threading.Thread(target=go, daemon=True).start()
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -23,6 +130,38 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
+
+    def send_json(self, code, obj):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path.split("?")[0] == "/api/version":
+            latest, cur = latest_version(), local_version()
+            return self.send_json(200, {"version": cur, "latest": latest,
+                                        "update": bool(latest) and vtuple(latest) > vtuple(cur),
+                                        "blocked": update_blocker()})
+        return super().do_GET()
+
+    def do_POST(self):
+        # The custom header can't be sent cross-site without a CORS preflight, which this server never allows,
+        # so only the app's own page can start an update.
+        if self.path != "/api/update" or self.headers.get("X-OBS-Remote") != "1":
+            return self.send_json(403, {"error": "Not allowed"})
+        why = update_blocker()
+        if why:
+            return self.send_json(409, {"error": why})
+        try:
+            v = install_update()
+        except Exception as e:  # report any failure to the phone; the old files stay unless replaced
+            return self.send_json(500, {"error": f"Update failed: {e}"})
+        _latest["at"] = 0
+        self.send_json(200, {"ok": True, "version": v})
+        restart_later(self.server)
 
     def log_message(self, fmt, *args):  # quiet: one line per page load only
         if self.path in ("/", "/index.html") and sys.stderr:
@@ -50,10 +189,16 @@ def lan_ips():
 
 
 if __name__ == "__main__":
-    try:
-        srv = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), functools.partial(Handler, directory=ROOT))
-    except OSError as e:
-        sys.exit(f"Can't use port {PORT} ({e}). Is OBS Remote already running?")
+    srv = None
+    for attempt in range(20):  # after an update the old copy may still be letting go of the port
+        try:
+            srv = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), functools.partial(Handler, directory=ROOT))
+            break
+        except OSError as e:
+            err = e
+            time.sleep(0.5)
+    if srv is None:
+        sys.exit(f"Can't use port {PORT} ({err}). Is OBS Remote already running?")
     if sys.stdout:
         print("OBS Remote is running. On your phone (same Wi-Fi), open:")
         for ip in lan_ips():
