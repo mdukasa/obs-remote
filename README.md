@@ -36,6 +36,8 @@ Tip: give the OBS PC a **fixed IP address** (a DHCP reservation in your router),
 - **Camera:** the joystick goes faster the further you push it. The camera only moves while your finger is down, and stops when you let go, switch apps or lock the phone.
   The **Speed** slider is a share of each camera's top speed, as set in its PTZ filter in OBS.
   **Tap** a preset to go there. **Hold** a preset to save the current position over it (it asks first).
+- **Camera pictures:** if a camera's PTZ control is on a different OBS source from its picture (e.g. VISCA on a hidden webcam source `CAM01`, picture from `CAM01-NDI`),
+  the app automatically uses an active source whose name starts with the same name. To choose a different one: Settings (⚙) → *Camera pictures*.
 - **Picture quality:** Settings → Picture: *Smooth* (25 fps), *Balanced* (10) or *Data saver* (2). Smooth uses about 5 Mbit/s of Wi-Fi.
 
 ## Troubleshooting

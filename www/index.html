@@ -479,7 +479,7 @@ async function shotLoop(){
     if(!obs.ready||document.hidden){await sleep(300);continue}
     const t0=performance.now();
     if(S.tab==="tabLive")await Promise.all([frame(S.program,"imgPgm",480,55),S.studio&&frame(S.preview,"imgPvw",480,55)]);
-    else{const d=curDev();if(d)await frame(d.source,"imgCam",640,62)}
+    else{const d=curDev();if(d)await frame(picOf(d),"imgCam",640,62)}
     const wait=1000/(FPS[S.quality]||25)-(performance.now()-t0);
     await sleep(Math.max(wait,4));
   }
@@ -496,9 +496,11 @@ async function loadDevices(){
   const r=await obs.call("CallVendorRequest",{vendorName:"obs-ptz",requestType:"ptz_list_devices",requestData:{}})
     .catch(e=>{S.ptzMissing=e.code===600||/vendor/i.test(e.message);return null});
   const devs=r?.responseData?.devices||[];
+  S.videoInputs=((await obs.call("GetInputList").catch(()=>({inputs:[]}))).inputs||[])
+    .filter(i=>i.inputKindCaps===undefined||(i.inputKindCaps&1)).map(i=>i.inputName);
   S.devices=await Promise.all(devs.map(async d=>{
     const [st,caps]=await Promise.all([obs.ptz(d.device,"ptz_get_state").catch(()=>({state:{}})),loadCaps(d.source)]);
-    return{device:d.device,source:d.source,kind:d.name,state:st.state||{},caps}}));
+    return{device:d.device,source:d.source,kind:d.name,state:st.state||{},caps,auto:await autoPicture(d.source)}}));
   if(!curDev()&&S.devices.length)S.dev=(S.devices.find(d=>d.state.connected)||S.devices[0]).device;
   renderCams();await loadPresets();
 }
@@ -512,15 +514,28 @@ async function loadCaps(source){
   return{pan:n("pan_speed_max","pantilt_speed_max"),tilt:n("tilt_speed_max","pantilt_speed_max"),zoom:n("zoom_speed_max"),focus:n("focus_speed_max")};
 }
 const capOf=k=>curDev()?.caps?.[k]??1;
+// The PTZ control can sit on a different source from the picture, e.g. VISCA on a hidden webcam source "CAM01"
+// while the scene shows "CAM01-NDI". If the PTZ source isn't producing video, use an active source whose name
+// starts with the same name. Settings can override this per camera.
+async function autoPicture(source){
+  const active=n=>obs.call("GetSourceActive",{sourceName:n}).then(r=>r.videoActive||r.videoShowing).catch(()=>false);
+  if(await active(source))return source;
+  const low=source.toLowerCase();
+  for(const n of (S.videoInputs||[]).filter(n=>n!==source&&n.toLowerCase().startsWith(low)))if(await active(n))return n;
+  return source;
+}
+const picOf=d=>d?(store.get("pic:"+d.source,"")||d.auto||d.source):"";
+const isLive=d=>!!d&&(S.liveSources.has(d.source)||S.liveSources.has(picOf(d)));
 function renderCams(){
-  $("cams").innerHTML=S.devices.length?S.devices.map(d=>`<button class="chip${d.device===S.dev?" sel":""}" data-dev="${d.device}"><span class="dot ${d.state.connected?"ok":""}"></span>${esc(d.source)}${S.liveSources.has(d.source)?" · LIVE":""}</button>`).join("")
+  $("cams").innerHTML=S.devices.length?S.devices.map(d=>`<button class="chip${d.device===S.dev?" sel":""}" data-dev="${d.device}"><span class="dot ${d.state.connected?"ok":""}"></span>${esc(d.source)}${isLive(d)?" · LIVE":""}</button>`).join("")
     :S.ptzMissing?`<div class="empty">OBS has no PTZ control for this app. It needs obs-ptz <b>1.0 (beta)</b> or newer with Settings → Websocket access = “Control”. The stable 0.19.x release has no websocket control. Everything on the Live tab still works.</div>`
     :`<div class="empty">No PTZ cameras found. Is the obs-ptz plugin loaded, with websocket access set to “Control”?</div>`;
   const d=curDev();
-  $("onair").classList.toggle("show",!!d&&S.liveSources.has(d.source));
-  $("camMon").classList.toggle("pgm",!!d&&S.liveSources.has(d.source));
+  $("onair").classList.toggle("show",isLive(d));
+  $("camMon").classList.toggle("pgm",isLive(d));
   if(d){const f=d.state.features||{};
-    $("camState").textContent=d.state.connected?`${d.source} · ${d.kind.replace(" PTZ Control","")}`:`${d.source} · camera not connected`;
+    const pn=picOf(d)!==d.source?` (picture: ${picOf(d)})`:"";
+    $("camState").textContent=(d.state.connected?`${d.source} · ${d.kind.replace(" PTZ Control","")}`:`${d.source} · camera not connected`)+pn;
     $("focusRow").style.display=f.focus?"":"none";
     $("btnAF").textContent=f.autofocus?(d.state.focus_af_enabled===false?"Auto focus: off":"Auto focus: on"):"Auto focus";
     $("btnAF").disabled=!f.autofocus;
@@ -665,6 +680,10 @@ function openSettings(force){
       <option value="saver"${S.quality==="saver"?" selected":""}>Data saver — 2 fps</option></select></div>
     ${S.scenes.length?`<label class="check"><input type="checkbox" id="sDirect" ${S.directTap?"checked":""}>Studio mode: tapping a scene sends it straight to program</label>
     <div class="field"><label>Scenes shown on the phone</label></div><div class="hidelist">${hideRows}</div>`:""}
+    ${S.devices.length?`<div class="field"><label>Camera pictures (which OBS source to show for each PTZ camera)</label></div>
+    ${S.devices.map(d=>{const cur=store.get("pic:"+d.source,"");return `<div class="field"><label>${esc(d.source)}</label><select data-pic="${esc(d.source)}">
+      <option value=""${cur?"":" selected"}>Automatic (${esc(d.auto||d.source)})</option>
+      ${(S.videoInputs||[]).map(n=>`<option value="${esc(n)}"${cur===n?" selected":""}>${esc(n)}</option>`).join("")}</select></div>`}).join("")}`:""}
     <div class="btns${force?" one":""}">${force?"":"<button data-close>Close</button>"}<button class="primary" id="sSave">Save &amp; connect</button></div>`,
     close=>{$("sSave").onclick=()=>{
       cfg.host=$("sHost").value.trim();cfg.port=+$("sPort").value||4455;cfg.pw=$("sPw").value;
@@ -672,7 +691,8 @@ function openSettings(force){
       S.quality=$("sQuality").value;store.set("quality",S.quality);
       if($("sDirect")){S.directTap=$("sDirect").checked;store.set("directTap",S.directTap)}
       document.querySelectorAll("[data-hide]").forEach(c=>c.checked?S.hidden.delete(c.dataset.hide):S.hidden.add(c.dataset.hide));
-      store.set("hidden",[...S.hidden]);renderScenes();delete $("scrim").dataset.lock;close();
+      store.set("hidden",[...S.hidden]);renderScenes();
+      document.querySelectorAll("[data-pic]").forEach(el=>store.set("pic:"+el.dataset.pic,el.value));$("imgCam").removeAttribute("src");delete $("scrim").dataset.lock;close();
       obs.close();connect()}});
   if(force)$("scrim").dataset.lock="1";else delete $("scrim").dataset.lock;
 }

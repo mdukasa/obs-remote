@@ -35,6 +35,7 @@ Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz
   The app reads those caps with `GetSourceFilterList` and scales into them, so the whole Speed slider is useful.
 - **Joystick:** speed comes from how far the knob is pushed. Direction is stretched to a square, so diagonals get full speed on the leading axis.
   Pushes within about 11° of straight snap to a pure pan or tilt.
+- **Picture source:** the PTZ filter's source is used if it's producing video (`GetSourceActive`). Otherwise the app uses the first active video input whose name starts with it, unless overridden in Settings (stored per source as `obsr.pic:<name>`). ON AIR is shown if either source is in the program.
 - **Safety:** moves only run while a finger is down. Release, `pointercancel`, `visibilitychange`, `blur` and `pagehide` all send `ptz_stop`.
 - **Presets:** shown when they have a thumbnail or are local, else the first 16. Hikvision's built-in special presets (Call/Set/Start…) are hidden.
 
