@@ -17,6 +17,9 @@ phone browser ──http :8765──▶ server.py (the page, plus a few /api/ ca
 - **Sign-in link:** the installer's QR code opens `http://PC:8765/#pw=PASSWORD` (percent-encoded; `&port=N` when OBS's websocket isn't on 4455).
   The page saves that like a typed-in login, then removes it from the address bar with `history.replaceState`, so a home-screen icon doesn't carry it.
   Browsers never send the `#` part to the server, so it isn't in any request or log.
+- **Home screen:** `manifest.webmanifest` (PNG icons at 192/512, a maskable one, `apple-touch-icon.png` for iPhones) and `sw.js`, a service worker that caches nothing.
+  iPhones add it as a full-screen app from plain http. Chrome and Edge only offer *Install app* on https or localhost; at `http://192.168…` they make a shortcut that opens in the browser.
+  The icon PNGs are drawn from `icon.svg`; redraw them if it changes.
 
 ## Pictures
 Monitors call `GetSourceScreenshot` back to back, with one request in flight per monitor, so slow Wi-Fi lowers the frame rate instead of adding delay.
@@ -75,7 +78,7 @@ Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz
   Pushes within about 11° of straight snap to a pure pan or tilt.
 - **Picture source:** the PTZ filter's source is used if it's producing video (`GetSourceActive`). Otherwise the app uses the first active video input whose name starts with it, unless overridden in Settings. ON AIR is shown if either source is in the program.
 - **Names and order:** display names and picture overrides are stored in OBS with `SetPersistentData` (profile realm, slot `obs-remote.cameras`, `{names:{source:name}, pictures:{source:input}}`), so all phones share them. Devices are sorted by display name with numeric collation.
-- **Refresh Camera (↻):** reconnects the picture source and the PTZ link. The picture source depends on its kind:
+- **Refresh camera:** reconnects the picture source and the PTZ link. The picture source depends on its kind:
   - NDI: `ndi_source_name` is set to empty and then back, which rebuilds the receiver.
   - Media and VLC: restart.
   - Browser: refresh.

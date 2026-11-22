@@ -23,7 +23,7 @@ Control OBS Studio and your PTZ cameras from a phone on the same Wi-Fi. No app s
 1. **Download** the [latest release](https://github.com/mdukasa/obs-remote/releases/latest) (*Assets* → **Source code (zip)**) and extract it somewhere permanent, e.g. `C:\OBS Remote`.
 2. **Double-click `Install.bat`** and answer its questions. It offers to turn on OBS's WebSocket server and to install obs-ptz, then asks Windows to open the firewall to your local network: click **Yes**.
 3. **If you use obs-ptz:** in OBS, *PTZ Controls* dock → settings → **Websocket access** = **Control**.
-4. **Scan the QR code** with the phone's camera. It opens the app and signs the phone in to OBS in one go. Then add the page to the home screen.
+4. **Scan the QR code** with the phone's camera. It opens the app and signs the phone in to OBS in one go. Then add the page to the home screen: on an iPhone, Safari's Share button → **Add to Home Screen** (it then opens full screen like an app); on Android, Chrome's ⋮ menu → **Add to home screen** (a shortcut that opens in Chrome, since phones only fully install apps from https pages).
 
 <p align="center"><img src="https://raw.githubusercontent.com/mdukasa/obs-remote-assets/main/screenshots/installer.png" width="620" alt="The installer: four checks marked OK, then a QR code and the phone address"></p>
 
@@ -44,7 +44,7 @@ A dot on the ⚙ button means a new version is out. Open Settings and tap **Upda
 - **Speed:** at 100% the app moves as fast as obs-ptz's own controls. Lower it for finer moves.
 - **Presets:** tap to go there, hold to save the current position over it.
 - **OBS closed or crashed?** A banner says so, with a **Start OBS** button that opens OBS on the PC again.
-- **↻ Refresh Camera:** reconnects a camera whose picture froze or whose control stopped answering, e.g. after a reboot.
+- **Refresh camera:** reconnects a camera whose picture froze or whose control stopped answering, e.g. after a reboot.
 - **Listen:** tap **Listen** in the Audio section to hear OBS's monitored sources on the phone, about 0.2 s late; tap again to stop. It's silent until you tap it. The 🎧 button on each source turns OBS monitoring on or off for it. Monitored sources also play on OBS's monitoring device (OBS *Settings → Audio → Advanced*), so point that at a spare output if it's the hall's speakers.
 - **Settings (⚙):** connection and picture quality, Studio Mode, which scenes show, hide the audio section, camera names and which OBS source shows each camera.
 
@@ -63,8 +63,8 @@ Details: [how auto-reconnect works](docs/HOW-IT-WORKS.md#auto-reconnect-of-froze
 | Setup says the server "didn't start" | It names the program using port 8765. Close it, or run `Install.bat -Port 8766`. |
 | "OBS has no PTZ control for this app" | Install obs-ptz 1.0 (beta) or newer and set *Websocket access* = *Control*. |
 | Camera is very slow even at 100% | Its max speed in the camera's obs-ptz filter in OBS is low. |
-| Camera picture frozen | Wait about 20 s for the automatic fix, or press **↻ Refresh Camera**. If it happens often, try turning off *NDI Multicast* in the camera. |
-| Camera keeps moving after the phone lost Wi-Fi | Press **■ Stop Moving**, or recall a preset. |
+| Camera picture frozen | Wait about 20 s for the automatic fix, or press **Refresh camera**. If it happens often, try turning off *NDI Multicast* in the camera. |
+| Camera keeps moving after the phone lost Wi-Fi | Press **Stop moving**, or recall a preset. |
 
 ## Uninstall
 Double-click `Uninstall.bat`, then delete the folder.
