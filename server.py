@@ -41,7 +41,7 @@ REPO = "mdukasa/obs-remote"
 LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/tags/"  # + tag
 API_HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "obs-remote"}
-KEEP = {"Phone address.txt", "Phone address.html", "autofix.log", "youtube.log"}  # local files an update never touches
+KEEP = {"Phone address.txt", "Phone address.html", "autofix.log", "youtube.log", "youtube_state.json"}  # local files an update never touches
 _latest = {"at": 0.0, "release": None}
 
 
@@ -270,6 +270,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                         "notes": rel and rel["notes"], "url": rel and rel["url"],
                                         "update": bool(rel) and vtuple(rel["version"]) > vtuple(cur),
                                         "blocked": update_blocker()})
+        if self.path.split("?")[0] == "/api/youtube":
+            # Is a YouTube broadcast already set up in OBS (Manage Broadcast on the PC)? Then Start stream just starts.
+            return self.send_json(200, {"ready": youtube.broadcast_ready()})
         if self.path.split("?")[0] == "/api/autofix":
             return self.send_json(200, {**autofix.STATE, "events": list(autofix.EVENTS)})
         if self.path.split("?")[0] == "/api/mixer-hidden":
@@ -419,6 +422,7 @@ if __name__ == "__main__":
     if srv is None:
         sys.exit(f"Can't use port {PORT}: {err}. Close the program using it, or run Install.bat -Port 8766.")
     autofix.start()
+    youtube.start()
     if sys.stdout:
         print("OBS Remote is running. On your phone (same Wi-Fi), open:")
         for ip in lan_ips():

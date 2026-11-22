@@ -622,13 +622,16 @@ function renderOutputs(stats){
 $("btnStream").onclick=async()=>{
   if(S.stream.outputActive)return confirmSheet("Stop the stream?","Viewers will be disconnected straight away.","Stop stream",true,()=>obs.call("StopStream").then(()=>toast("Stream stopping")).catch(fail));
   const yt=await ytAccount();
+  // a broadcast already set up in OBS (Manage Broadcast on the PC): OBS streams to it, no questions
+  const ready=yt&&await fetch("/api/youtube",{cache:"no-store"}).then(r=>r.ok?r.json():{}).then(j=>j.ready).catch(()=>false);
+  if(ready)return confirmSheet("Start the stream?","OBS will go live to the YouTube broadcast already set up in OBS.","Go live",true,()=>obs.call("StartStream").then(()=>toast("Stream starting")).catch(fail));
   if(yt)return ytSheet(yt);
   confirmSheet("Start the stream?","OBS will go live to the configured service.","Go live",true,()=>obs.call("StartStream").then(()=>toast("Stream starting")).catch(fail))};
 
 /* ---------- Go live on YouTube (OBS signed in to a YouTube account) ----------
    Signed in (rather than using a stream key), OBS won't stream until its "YouTube Broadcast Setup" dialog is filled
-   in on the PC, and obs-websocket can't do that. So the phone asks the same questions, saves the answers as OBS's
-   remembered YouTube settings (which pre-fill that dialog), and the server (youtube.py) clicks through the dialog. */
+   in on the PC, and obs-websocket can't do that. So the phone asks the same questions, starting from OBS's
+   remembered YouTube settings, and the server (youtube.py) fills in that dialog. The saved settings stay as they were. */
 const YT_PRIVACY=[["public","Public"],["unlisted","Unlisted"],["private","Private"]];
 const YT_LATENCY=[["normal","Normal"],["low","Low"],["ultraLow","Ultra low"]];
 const YT_CATEGORY=[["17","Sports"],["19","Travel and Events"],["20","Gaming"],["22","People and blogs"],["23","Comedy"],["24","Entertainment"],
@@ -670,11 +673,8 @@ async function ytGoLive(f){if(ytBusy)return;buzz();
   sheet(`<h3>Going live…</h3><p>Setting up the broadcast in OBS on the PC. This takes a few seconds.</p>`);lock(true);
   ytBusy=true;
   try{
-    const set=(n,x)=>obs.call("SetProfileParameter",{parameterCategory:"YouTube",parameterName:n,parameterValue:String(x)});
-    for(const [n,x] of [["Title",f.title],["Description",f.description],["Privacy",f.privacy[0]],["CategoryID",f.category[0]],
-      ["Latency",f.latency[0]],["MadeForKids",f.kids],["DVR",f.dvr],["ScheduleForLater",false],["RememberSettings",true]])await set(n,x);
     const r=await fetch("/api/youtube/golive",{method:"POST",headers:{"X-OBS-Remote":"1","X-OBS-Remote-Key":sha64("obs-remote-listen:"+cfg.pw),"Content-Type":"application/json"},
-      body:JSON.stringify({title:f.title,description:f.description,privacy:f.privacy[1],category:f.category[1],latency:f.latency[1],kids:f.kids,dvr:f.dvr,dryRun:!!f.dryRun})});
+      body:JSON.stringify({title:f.title,description:f.description,privacy:f.privacy[0],category:f.category[0],latency:f.latency[0],kids:f.kids,dvr:f.dvr,dryRun:!!f.dryRun})});
     const j=await r.json().catch(()=>({}));
     if(j.noAccount&&!f.dryRun){await obs.call("StartStream");lock(false);$("scrim").classList.remove("show");return toast("Stream starting")}
     if(!r.ok||!j.ok){

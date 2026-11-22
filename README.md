@@ -9,7 +9,7 @@ Control OBS Studio and your PTZ cameras from a phone on the same Wi-Fi. No app s
 </p>
 
 - **Live tab:** preview and program pictures, scenes with TAKE, stream and record, mute buttons with sound meters, and a switch for the [Advanced Scene Switcher](https://github.com/WarmUpTill/SceneSwitcher) plugin if you use it.
-- **Going live on YouTube:** if OBS is signed in to your YouTube account, **Start stream** asks for the title, description, privacy and the rest of OBS's *YouTube Broadcast Setup* questions on the phone, then fills that window in on the PC for you. With a stream key it just starts.
+- **Going live on YouTube:** if OBS is signed in to your YouTube account, **Start stream** asks for the title, description, privacy and the rest of OBS's *YouTube Broadcast Setup* questions on the phone, then fills that window in on the PC for you. Your saved details in OBS stay as they are. If a broadcast is already set up in OBS (**Manage Broadcast** on the PC), or OBS uses a stream key, it just starts.
 - **Camera tab:** pan, tilt, zoom and focus, presets with thumbnails, and a red **LIVE** tag when the camera you're moving is on air. Swipe the picture to switch camera.
 
 <sub>Screenshots use made-up pictures, not real camera footage.</sub>

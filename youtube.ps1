@@ -1,8 +1,8 @@
 # Fills in OBS's "YouTube Broadcast Setup" dialog and clicks "Create broadcast and start streaming".
 # Run by youtube.py for the phone's Go live button, when OBS is signed in to a YouTube account.
 #
-# The phone has already saved its choices as OBS's remembered YouTube settings (SetProfileParameter), so the
-# dialog opens with them filled in. This script opens the dialog with OBS's own Manage Broadcast button, checks
+# youtube.py has put the phone's choices in OBS's remembered YouTube settings for the moment (and puts the saved
+# ones back afterwards), so the dialog opens with them filled in. This script opens the dialog with OBS's own Manage Broadcast button, checks
 # that it shows those choices (setting the text boxes and tick boxes if not), and starts the broadcast.
 # Drop-down lists can't be changed from outside OBS, so if one of those is wrong it cancels instead.
 #
@@ -104,9 +104,9 @@ try {
     $ks = Get-Pat $kid $SP; if (-not $ks.Current.IsSelected) { $ks.Select() }
     if (-not $ks.Current.IsSelected) { Cancel-Dialog "Couldn't set 'made for kids' in OBS. Finish on the PC." }
 
-    # Tick boxes: DVR as asked; not scheduled for later (that would create the broadcast without going live);
-    # Remember on, so OBS keeps these choices (they are the phone's starting point next time).
-    foreach ($p in @(@('checkDVR', [bool]$want.dvr), @('checkScheduledLater', $false), @('checkRememberSettings', $true))) {
+    # Tick boxes: DVR as asked; not scheduled for later (that would create the broadcast without going live).
+    # "Remember these settings" is left as it is: the details saved in OBS are people's own, kept on purpose.
+    foreach ($p in @(@('checkDVR', [bool]$want.dvr), @('checkScheduledLater', $false))) {
         $t = Get-Pat (Field $p[0]) $TP
         $on = $t.Current.ToggleState -eq [System.Windows.Automation.ToggleState]::On
         if ($on -ne $p[1]) { $t.Toggle() }
