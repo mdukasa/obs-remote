@@ -119,12 +119,21 @@ h2 button{font-size:12px;padding:4px 8px;text-transform:none;letter-spacing:0}
 .onair.show{display:flex}
 .camview{margin-top:var(--gap)}
 .ctl{display:grid;grid-template-columns:1fr 92px;gap:var(--gap);margin-top:var(--gap);align-items:stretch}
-.pad{position:relative;aspect-ratio:1;max-width:300px;width:100%;align-self:center;margin:0 auto;border-radius:50%;background:radial-gradient(circle,var(--panel2) 0 30%,var(--panel) 31% 100%);border:1px solid var(--line);touch-action:none}
+.pad{position:relative;aspect-ratio:1;max-width:300px;width:100%;align-self:center;margin:0 auto;border-radius:50%;background:radial-gradient(circle,var(--panel2) 0 30%,var(--panel) 31% 100%);border:1px solid var(--line);touch-action:pan-y}
 .pad::before,.pad::after{content:"";position:absolute;background:var(--line)}
 .pad::before{left:50%;top:10%;bottom:10%;width:1px}
 .pad::after{top:50%;left:10%;right:10%;height:1px}
 .knob{position:absolute;left:50%;top:50%;width:30%;height:30%;margin:-15% 0 0 -15%;border-radius:50%;background:var(--blue);box-shadow:0 4px 14px #0008;transition:transform .12s;pointer-events:none;z-index:1}
 .pad.active .knob{transition:none}
+/* direction buttons (default) — the joystick is the alternative, Settings → Cameras → Controls */
+.dpad{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:6px;aspect-ratio:1;max-width:300px;width:100%;margin:0 auto;align-self:center}
+.dpad button,.side button,#focusRow button{touch-action:pan-y}  /* swipe over them to scroll (see holdButton) */
+.dpad button{padding:0;display:flex;align-items:center;justify-content:center;border-radius:14px}
+.dpad button svg{width:30px;height:30px;transform:rotate(var(--r))}
+.dpad button.diag{background:var(--panel);color:var(--dim)}
+.dpad button.diag svg{width:24px;height:24px}
+.dpad button.held{background:var(--blue);border-color:var(--blue);color:#fff}
+.dpad .mid{background:#3b1416;border-color:var(--red);color:#ffb3b5;font-size:20px}
 .side{display:flex;flex-direction:column;gap:var(--gap)}
 .side button{flex:1;font-size:22px;font-weight:700;padding:6px}
 .side small{display:block;font-size:11px;color:var(--dim);font-weight:500}
@@ -133,7 +142,8 @@ h2 button{font-size:12px;padding:4px 8px;text-transform:none;letter-spacing:0}
 #btnStop{background:#3b1416;border-color:var(--red);color:#ffb3b5}
 #btnRefresh{background:#33270b;border-color:var(--amber);color:#f2cc72}
 .speed{display:flex;align-items:center;gap:10px;margin-top:var(--gap);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
-.speed input{flex:1;accent-color:var(--blue)}
+.speed input{flex:1;accent-color:var(--blue);pointer-events:none}  /* driven by the row's own drag handler */
+.speed{touch-action:pan-y;user-select:none;-webkit-user-select:none;cursor:ew-resize}
 .speed span{min-width:42px;text-align:right;font-variant-numeric:tabular-nums;color:var(--dim)}
 .presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px}
 .preset{padding:0;overflow:hidden;display:flex;flex-direction:column;text-align:left;border-radius:10px}
@@ -171,6 +181,7 @@ details.grp summary>div{display:flex;flex-direction:column;gap:2px;min-width:0}
 .note{font-size:12px;color:var(--dim);margin:8px 0 4px}
 /* picture quality: three tiles */
 .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.seg.two{grid-template-columns:1fr 1fr;margin-bottom:12px}
 .seg input{position:absolute;opacity:0;pointer-events:none}
 .seg span{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);cursor:pointer;text-align:center}
 .seg svg{width:22px;height:22px;color:var(--dim);margin-bottom:2px}
@@ -263,6 +274,7 @@ details.grp .grpb>.field:first-child,details.grp .grpb>div:first-child{margin-to
     <section style="margin-top:0">
       <div class="ctl">
         <div class="pad" id="pad"><div class="knob" id="knob"></div></div>
+        <div class="dpad" id="dpad"></div>
         <div class="side">
           <button data-zoom="1">+<small>Zoom in</small></button>
           <button data-zoom="-1">−<small>Zoom out</small></button>
@@ -344,11 +356,16 @@ class OBS{
         if(was)this.emit("close",ev)};
       ws.onerror=()=>{};
     })}
-  close(){if(this.ws){this.ws.onclose=null;try{this.ws.close()}catch{}this.ws=null}this.ready=false}
-  call(requestType,requestData){
+  // Closing on purpose (e.g. Settings → Save & connect) must also fail the requests still waiting for an answer:
+  // the picture loop awaits one, and left pending it would wait forever (black picture until the page reloads).
+  close(){if(this.ws){this.ws.onclose=null;try{this.ws.close()}catch{}this.ws=null}this.ready=false;
+    this.pending.forEach(p=>p.rej(new Error("disconnected")));this.pending.clear()}
+  call(requestType,requestData,timeout=10000){
     if(!this.ready)return Promise.reject(new Error("Not connected"));
     const requestId=String(++this.id);
-    return new Promise((res,rej)=>{this.pending.set(requestId,{res,rej});
+    return new Promise((res,rej)=>{
+      const t=setTimeout(()=>{if(this.pending.delete(requestId))rej(new Error("OBS didn't answer"))},timeout);
+      this.pending.set(requestId,{res:v=>{clearTimeout(t);res(v)},rej:e=>{clearTimeout(t);rej(e)}});
       this.ws.send(JSON.stringify({op:6,d:{requestType,requestId,requestData}}))})}
   ptz(device,requestType,data={}){
     return this.call("CallVendorRequest",{vendorName:"obs-ptz",requestType,requestData:{device,...data}})
@@ -379,8 +396,10 @@ function confirmSheet(title,text,okLabel,danger,onOk){
 const obs=new OBS();
 const S={scenes:[],program:"",preview:"",studio:false,stream:{},rec:{},audio:[],showAllAudio:false,
   devices:[],dev:store.get("dev",""),presets:{},thumbs:{},showAllPresets:false,liveSources:new Set(),
-  speed:store.get("speed",0.5),hidden:new Set(store.get("hidden",[])),
-  showAudio:store.get("showAudio",true),quality:store.get("quality","balanced"),tab:"tabLive"};
+  // Speed = share of each camera's max speed in its obs-ptz filter. 100% moves exactly like obs-ptz's own dock
+  // (which asks for full speed and lets obs-ptz cap it at the max). New key: the old one defaulted to 50%.
+  speed:store.get("speed2",1),hidden:new Set(store.get("hidden",[])),
+  showAudio:store.get("showAudio",true),ctrl:store.get("ctrl","buttons"),quality:store.get("quality","balanced"),tab:"tabLive"};
 const cfg={host:store.get("host",location.hostname||"localhost"),port:store.get("port",4455),pw:store.get("pw","")};
 
 /* ---------- connection ---------- */
@@ -587,7 +606,9 @@ async function frame(src,imgId,w,q,still){
   let r;try{r=await obs.call("GetSourceScreenshot",{sourceName:src,imageFormat:"jpg",imageWidth:w,imageCompressionQuality:q})}
   catch{shotErr[src]=performance.now();return}
   delete shotErr[src];
-  const im=new Image();im.src=r.imageData;try{await im.decode()}catch{return}
+  // decode() can stall (e.g. a backgrounded tab); never let it hold up the picture loop for more than 2 s
+  const im=new Image();im.src=r.imageData;
+  try{await Promise.race([im.decode(),sleep(2000).then(()=>{throw new Error("decode timeout")})])}catch{return}
   // the user may have switched camera while this frame was on its way: don't show the old camera
   if(still&&!still())return;
   const old=$(imgId);if(!old)return;im.id=imgId;im.alt="";old.replaceWith(im);
@@ -740,7 +761,10 @@ function stopMove(force){
   const d=curDev();if(!d||!(force||was))return;
   obs.ptz(d.device,"ptz_stop").catch(()=>{});
 }
-const curve=v=>{const dz=0.12,a=Math.abs(v);if(a<dz)return 0;return Math.sign(v)*Math.pow((a-dz)/(1-dz),1.5)};
+// Push → share of the Speed slider. Past a small dead zone it starts at MIN and rises gently to 1 at the edge,
+// so a light touch isn't a crawl and full push isn't a big jump (was 0→1 with power 1.5: ~30× between the two).
+const CURVE={dz:0.12,min:0.25,pow:1.2};
+const curve=v=>{const {dz,min,pow}=CURVE,a=Math.abs(v);if(a<dz)return 0;return Math.sign(v)*(min+(1-min)*Math.pow((a-dz)/(1-dz),pow))};
 
 // joystick
 (function(){
@@ -750,23 +774,57 @@ const curve=v=>{const dz=0.12,a=Math.abs(v);if(a<dz)return 0;return Math.sign(v)
     knob.style.transform=`translate(${x*R*0.7}px,${y*R*0.7}px)`;
     // Speed comes from how far the knob is pushed; direction is stretched to a square so the leading axis
     // gets that full speed. Curving x and y separately gave a 45° push only ~55% speed per axis (too slow diagonally).
-    // Pushes within ~11° of straight snap to a pure pan/tilt.
+    // Pushes within ~7° of straight snap to a pure pan/tilt. The smaller axis is boosted (power 0.6) so a push
+    // that's only a little off straight still gives a speed the camera acts on: cameras round tiny speeds down
+    // to zero, which made diagonals only work right at 45°. E.g. 20° off straight: 0.36 → 0.54.
     const mag=curve(Math.min(1,Math.hypot(x,y))),big=Math.max(Math.abs(x),Math.abs(y))||1;
-    let ux=x/big,uy=y/big;if(Math.abs(ux)<0.2)ux=0;if(Math.abs(uy)<0.2)uy=0;
+    const minor=u=>Math.abs(u)<0.12?0:Math.sign(u)*Math.pow(Math.abs(u),0.6);
+    const ux=minor(x/big),uy=minor(y/big);
     sendMove(+(mag*ux*S.speed*capOf("pan")).toFixed(4),+(-mag*uy*S.speed*capOf("tilt")).toFixed(4),0,0)}
-  pad.addEventListener("pointerdown",e=>{if(pid!==null)return;pid=e.pointerId;pad.setPointerCapture(pid);pad.classList.add("active");buzz();at(e)});
-  pad.addEventListener("pointermove",e=>{if(e.pointerId===pid)at(e)});
-  const end=e=>{if(e.pointerId!==pid)return;pid=null;pad.classList.remove("active");knob.style.transform="";stopMove(true)};
+  // Scrolling past the joystick: a touch that starts on the outer ring and moves mostly up/down scrolls the page
+  // (touch-action:pan-y). One that starts near the middle, or moves sideways, steers, and then blocks scrolling.
+  // Until it's decided nothing is sent, so a scroll never nudges the camera.
+  let steer=false,sx=0,sy=0;
+  const take=e=>{steer=true;pad.classList.add("active");buzz();at(e)};
+  pad.addEventListener("pointerdown",e=>{if(pid!==null)return;pid=e.pointerId;try{pad.setPointerCapture(pid)}catch{}
+    const r=pad.getBoundingClientRect(),R=r.width/2;sx=e.clientX;sy=e.clientY;steer=false;
+    if(e.pointerType!=="touch"||Math.hypot(e.clientX-r.left-R,e.clientY-r.top-R)<R*0.45)take(e)});
+  pad.addEventListener("pointermove",e=>{if(e.pointerId!==pid)return;if(steer){at(e);return}
+    const dx=Math.abs(e.clientX-sx),dy=Math.abs(e.clientY-sy);if(dx+dy>6&&dx>dy)take(e)});
+  pad.addEventListener("touchmove",e=>{if(steer)e.preventDefault()},{passive:false});
+  const end=e=>{if(e.pointerId!==pid)return;pid=null;const was=steer;steer=false;pad.classList.remove("active");knob.style.transform="";if(was)stopMove(true)};
   pad.addEventListener("pointerup",end);pad.addEventListener("pointercancel",end);pad.addEventListener("lostpointercapture",end);
 })();
 // hold buttons (zoom / focus)
+// A finger that swipes across a hold button scrolls the page (touch-action:pan-y) and the browser then cancels the
+// pointer. So a touch only starts moving after HOLD_DELAY: a scroll is recognised before that and never nudges the
+// camera. A mouse or pen starts at once.
+const HOLD_DELAY=120;
 function holdButton(btn,start){
-  let held=false;
-  btn.addEventListener("pointerdown",e=>{if(btn.disabled)return;held=true;btn.setPointerCapture(e.pointerId);buzz();start()});
-  const end=()=>{if(!held)return;held=false;stopMove(true)};
+  let held=false,timer=0;
+  btn.addEventListener("pointerdown",e=>{if(btn.disabled)return;try{btn.setPointerCapture(e.pointerId)}catch{}
+    const go=()=>{timer=0;held=true;buzz();start()};
+    if(e.pointerType==="touch")timer=setTimeout(go,HOLD_DELAY);else go()});
+  const end=()=>{clearTimeout(timer);timer=0;if(!held)return;held=false;stopMove(true)};
   ["pointerup","pointercancel","lostpointercapture"].forEach(ev=>btn.addEventListener(ev,end));
   btn.addEventListener("contextmenu",e=>e.preventDefault());
 }
+// Direction buttons: hold to pan/tilt at the Speed slider's speed, release to stop. Diagonals move both axes
+// at full speed. The middle button stops. Arrows point up = 0°, clockwise.
+(()=>{
+  const dirs=[[-1,-1,315],[0,-1,0],[1,-1,45],[-1,0,270],null,[1,0,90],[-1,1,225],[0,1,180],[1,1,135]];
+  const arrow='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
+  const dp=$("dpad");
+  const arrowD='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M7 11l5-5 5 5"/></svg>';
+  dp.innerHTML=dirs.map(d=>d?`<button class="${d[0]&&d[1]?"diag":""}" style="--r:${d[2]}deg" data-dx="${d[0]}" data-dy="${d[1]}" aria-label="Move">${d[0]&&d[1]?arrowD:arrow}</button>`
+    :`<button class="mid" aria-label="Stop moving">■</button>`).join("");
+  dp.querySelectorAll("[data-dx]").forEach(b=>{
+    holdButton(b,()=>{b.classList.add("held");sendMove(+(+b.dataset.dx*S.speed*capOf("pan")).toFixed(4),+(-b.dataset.dy*S.speed*capOf("tilt")).toFixed(4),0,0)});
+    ["pointerup","pointercancel","lostpointercapture"].forEach(ev=>b.addEventListener(ev,()=>b.classList.remove("held")))});
+  dp.querySelector(".mid").onclick=()=>{buzz(30);stopMove(true)};
+})();
+function applyCtrl(){$("pad").hidden=S.ctrl!=="joystick";$("dpad").hidden=S.ctrl==="joystick"}
+applyCtrl();
 document.querySelectorAll("[data-zoom]").forEach(b=>holdButton(b,()=>sendMove(0,0,+(+b.dataset.zoom*Math.max(S.speed,0.3)*capOf("zoom")).toFixed(4),0)));
 document.querySelectorAll("[data-focus]").forEach(b=>holdButton(b,()=>sendMove(0,0,0,+(+b.dataset.focus*0.5*capOf("focus")).toFixed(4))));
 $("btnAF").onclick=()=>{const d=curDev();if(!d)return;const on=d.state.focus_af_enabled===false;
@@ -820,7 +878,22 @@ window.addEventListener("blur",()=>{if(moving)stopMove()});
 window.addEventListener("pagehide",()=>{if(moving)stopMove()});
 
 $("speed").value=S.speed;$("speedV").textContent=Math.round(S.speed*100)+"%";
-$("speed").oninput=e=>{S.speed=+e.target.value;$("speedV").textContent=Math.round(S.speed*100)+"%";store.set("speed",S.speed)};
+$("speed").oninput=e=>{S.speed=+e.target.value;$("speedV").textContent=Math.round(S.speed*100)+"%";store.set("speed2",S.speed)};
+// Scroll-safe slider: the bar itself ignores touches (CSS). Up/down over it scrolls the page, a tap changes
+// nothing, and only a sideways drag moves it, relative to where the finger started (no jump to the tap point).
+(()=>{
+  const box=$("speed").parentElement,inp=$("speed");let id=null,sx=0,sy=0,v0=0,drag=false;
+  const min=+inp.min,max=+inp.max,step=+inp.step||0.05;
+  box.addEventListener("pointerdown",e=>{if(!e.isPrimary||e.button>0)return;id=e.pointerId;sx=e.clientX;sy=e.clientY;v0=+inp.value;drag=false;
+    try{box.setPointerCapture(id)}catch{}});
+  box.addEventListener("pointermove",e=>{if(e.pointerId!==id)return;const dx=e.clientX-sx,dy=e.clientY-sy;
+    if(!drag){if(Math.abs(dx)>6&&Math.abs(dx)>Math.abs(dy))drag=true;else{if(Math.abs(dy)>10)id=null;return}}
+    const v=Math.min(max,Math.max(min,Math.round((v0+dx/inp.offsetWidth*(max-min))/step)*step));
+    if(v!==+inp.value){inp.value=v;inp.dispatchEvent(new Event("input"))}});
+  box.addEventListener("touchmove",e=>{if(drag&&id!==null)e.preventDefault()},{passive:false});
+  const end=e=>{if(e.pointerId===id){id=null;drag=false}};
+  box.addEventListener("pointerup",end);box.addEventListener("pointercancel",end);
+})();
 
 // presets
 const HIK_SPECIAL=/^(Start|Call|Stop|Set|Clear|Remote|Day|Night|Auto|Manual|Restart|Restore|Iris|Focus|Menu|One-?touch|Park|Wiper|Light)\b/i;
@@ -885,6 +958,8 @@ const ICON={
   film:svgI('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>'),
   gauge:svgI('<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>'),
   leaf:svgI('<path d="M5 20c0-9 6-15 15-15 0 9-6 15-15 15z"/><path d="M5 20l7-7"/>'),
+  dpad:svgI('<path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/>'),
+  joystick:svgI('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/>'),
   speaker:svgI('<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>'),
   studio:svgI('<rect x="2" y="6" width="9" height="7" rx="1.5"/><rect x="13" y="6" width="9" height="7" rx="1.5"/><path d="M5 17h14M15 15l2 2-2 2"/>'),
   shuffle:svgI('<path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>'),
@@ -913,7 +988,11 @@ function openSettings(force){
     ${S.ass!==null?tog("sShowAss",S.showAss,ICON.shuffle,"Auto scene switching","Show the Advanced Scene Switcher switch"):""}
     ${tog("sShowAudio",S.showAudio,ICON.speaker,"Audio","Show the audio section: mute buttons and sound meters")}
     ${S.scenes.length?`<div class="sub">Scenes on the phone <span id="sShown">${shown} of ${S.scenes.length}</span></div><div class="scns">${hideRows}</div>`:""}`)}
-    ${S.devices.length?grp(ICON.camera,"Cameras",`${S.devices.length} PTZ camera${S.devices.length>1?"s":""}`,false,`<div id="sFix"></div>
+    ${S.devices.length?grp(ICON.camera,"Cameras",`${S.devices.length} PTZ camera${S.devices.length>1?"s":""} · ${S.ctrl==="joystick"?"joystick":"buttons"}`,false,`
+    <div class="sub">Controls</div>
+    <div class="seg two">${[["buttons","Buttons","hold an arrow",ICON.dpad],["joystick","Joystick","push further = faster",ICON.joystick]].map(([v,t,s,i])=>
+      `<label><input type="radio" name="sCtrl" value="${v}"${(S.ctrl==="joystick"?"joystick":"buttons")===v?" checked":""}><span>${i}<b>${t}</b><small>${s}</small></span></label>`).join("")}</div>
+    <div id="sFix"></div>
     <div class="field"><label>Name shown in the app, and which OBS source gives the picture. Saved in OBS for every phone; cameras are listed in name order.</label></div>
     ${S.devices.map(d=>{const cur=S.camCfg?.pictures?.[d.source]||"";return `<div class="camrow"><div class="field"><label>${esc(d.source)} · name</label><input data-name="${esc(d.source)}" value="${esc(S.camCfg?.names?.[d.source]||"")}" placeholder="${esc(d.source)}" autocapitalize="off"></div>
       <div class="field"><label>picture</label><select data-pic="${esc(d.source)}">
@@ -933,6 +1012,7 @@ function openSettings(force){
       document.querySelectorAll("[data-hide]").forEach(c=>c.checked?S.hidden.delete(c.dataset.hide):S.hidden.add(c.dataset.hide));
       store.set("hidden",[...S.hidden]);renderScenes();
       S.showAudio=$("sShowAudio").checked;store.set("showAudio",S.showAudio);renderAudio();syncMeters();
+      const ctl=document.querySelector("input[name=sCtrl]:checked");if(ctl){S.ctrl=ctl.value;store.set("ctrl",S.ctrl);applyCtrl()}
       if(S.devices.length&&obs.ready){
         const c={names:{...(S.camCfg?.names||{})},pictures:{...(S.camCfg?.pictures||{})}};
         const put=(o,k,v)=>{if(v)o[k]=v;else delete o[k]};
@@ -966,15 +1046,17 @@ async function loadAutofix(){
    server.py compares its VERSION with the one on GitHub and, on request, downloads main and restarts itself.
    OBS isn't touched. A page served some other way has no /api and this stays hidden. */
 S.upd=null;
-async function checkUpdate(){
-  try{const r=await fetch("/api/version",{cache:"no-store"});S.upd=r.ok?await r.json():null}catch{S.upd=null}
+async function checkUpdate(fresh){  // fresh: ask GitHub now instead of the server's 10-minute cache
+  try{const r=await fetch("/api/version"+(fresh?"?fresh=1":""),{cache:"no-store"});S.upd=r.ok?await r.json():null}catch{S.upd=null}
   $("btnSettings").classList.toggle("badge",!!(S.upd?.update&&!S.upd.blocked));renderUpd()}
 function renderUpd(){
   const el=$("sUpd"),u=S.upd;if(!el)return;if(!u){el.innerHTML="";return}
   el.innerHTML=`<div class="upd"><span><b>OBS Remote ${esc(u.version)}</b><br>${
     u.update?(u.blocked?`${esc(u.latest)} is available. ${esc(u.blocked)}`:`Version ${esc(u.latest)} is available.`)
     :u.latest?"Up to date.":"Couldn't check for updates. Is the OBS PC online?"}</span>${
-    u.update&&!u.blocked?`<button class="primary" id="sUpdate">Update</button>`:""}</div>`;
+    u.update&&!u.blocked?`<button class="primary" id="sUpdate">Update</button>`:`<button id="sCheck">Check for updates</button>`}</div>`;
+  if($("sCheck"))$("sCheck").onclick=async()=>{const b=$("sCheck");b.disabled=true;b.textContent="Checking…";
+    await checkUpdate(true);if(S.upd&&!S.upd.update&&S.upd.latest)toast(`You have the latest version (${S.upd.version}).`)};
   // release notes (GitHub markdown, shown as plain text) above the usual explanation
   const notes=(u.notes||"").replace(/\r/g,"").replace(/^#+\s*/gm,"").replace(/\*\*|__|`/g,"").trim();
   if($("sUpdate"))$("sUpdate").onclick=()=>confirmSheet(`Update to ${u.latest}?`,

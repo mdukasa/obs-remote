@@ -3,7 +3,7 @@
 Control OBS Studio and your PTZ cameras from a phone on the same Wi-Fi. No app store and no account: it's a web page you add to your home screen.
 
 **Live tab:** preview and program pictures, tap a scene and press TAKE, start/stop the stream and recording, mute buttons with live sound meters. If OBS has the [Advanced Scene Switcher](https://github.com/WarmUpTill/SceneSwitcher) plugin, an **Auto scene switching** switch turns its automatic switching on and off (hide it in Settings if you don't use it).
-**Camera tab:** joystick pan/tilt, zoom and focus, presets with thumbnails, and a red LIVE tag on the picture when the camera you're moving is live. Swipe the picture sideways to switch camera. The picture (and the Live tab's Preview/Program) stays in view while you scroll.
+**Camera tab:** pan/tilt with direction buttons (or a joystick), zoom and focus, presets with thumbnails, and a red LIVE tag on the picture when the camera you're moving is live. Swipe the picture sideways to switch camera. The picture (and the Live tab's Preview/Program) stays in view while you scroll.
 
 ## What you need
 - A Windows PC running **OBS Studio 28 or newer** (it has the WebSocket server built in).
@@ -40,8 +40,9 @@ Tip: give the OBS PC a **fixed IP address** (a DHCP reservation in your router),
 ## Using it
 - **Scenes:** in Studio Mode, tap a scene to put it in Preview, then press **TAKE**. With Studio Mode off, a tap sends the scene straight to Program. Settings (⚙) → *Live tab* turns Studio Mode on or off and hides scenes you never use.
 - **Stream / Record:** these always ask before starting or stopping.
-- **Camera:** the joystick goes faster the further you push it. The camera only moves while your finger is down, and stops when you let go, switch apps or lock the phone.
-  The **Speed** slider is a share of each camera's top speed, as set in its PTZ filter in OBS.
+- **Camera:** hold an arrow to move (the corner arrows go diagonally, the middle ■ stops). Prefer a joystick? Settings (⚙) → *Cameras* → *Controls* → **Joystick**: it goes faster the further you push it.
+  The camera only moves while your finger is down, and stops when you let go, switch apps or lock the phone.
+  The **Speed** slider is a share of each camera's max speed, as set in its PTZ filter in OBS. At 100% (the default) the app moves exactly as fast as obs-ptz's own controls in OBS; lower it for finer moves.
   **Tap** a preset to go there. **Hold** a preset to save the current position over it (it asks first).
   **↻ Refresh Camera** reconnects the camera when its picture freezes or its PTZ control stops answering, e.g. after the camera rebooted.
   It reconnects both the picture source (NDI, GStreamer, webcam, media…) and the obs-ptz link, and takes a few seconds. It asks first if the camera is on air.

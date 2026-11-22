@@ -193,7 +193,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.split("?")[0] == "/api/version":
-            rel, cur = latest_release(), local_version()
+            # ?fresh=1 is the app's "Check for updates" button. GitHub allows 60 unauthenticated requests an
+            # hour, so a fresh check still reuses an answer that is under 15 seconds old.
+            fresh = "fresh=1" in self.path and time.time() - _latest["at"] > 15
+            rel, cur = latest_release(fresh), local_version()
             return self.send_json(200, {"version": cur, "latest": rel and rel["version"],
                                         "notes": rel and rel["notes"], "url": rel and rel["url"],
                                         "update": bool(rel) and vtuple(rel["version"]) > vtuple(cur),
