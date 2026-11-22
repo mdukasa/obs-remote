@@ -65,4 +65,4 @@ Double-click `Uninstall.bat`, then delete the folder.
 ## Security
 Anyone who can open the page **and** knows the OBS WebSocket password can control OBS, which is the same access the password already gives. The firewall only allows the local network; don't forward these ports on your router.
 
-How it works inside: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md). To re-make the screenshots: [docs/screenshots](docs/screenshots/make.py).
+How it works inside: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md). Screenshots, full-size demo pictures and the tools that make them: [obs-remote-assets](https://github.com/mdukasa/obs-remote-assets).

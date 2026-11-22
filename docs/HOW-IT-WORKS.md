@@ -125,3 +125,4 @@ The pictures in `docs/img` are made, not photographed, so they show no real venu
 - `fake-obs.js` replaces `WebSocket` with a pretend OBS that answers the app's obs-websocket requests (scenes, two obs-ptz cameras, presets, audio meters, a live stream) from that data.
 - `make.py` loads the real `www/index.html` with the fake OBS into a 390 px frame and screenshots it with headless Microsoft Edge (`live.png`, `camera.png`). `installer.png` is `terminal.html`, a copy of `setup/install.ps1`'s output with a real QR code from `setup/qr.py`.
 - After a UI change: `python pictures.py` (once), then `python make.py`. The generated HTML/JS files are git-ignored.
+- The full set (full-size venue pictures, every camera view, finished screenshots) lives in [mdukasa/obs-remote-assets](https://github.com/mdukasa/obs-remote-assets), with the same tools. Use that repo for websites and release material.
