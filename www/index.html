@@ -585,10 +585,11 @@ async function loadAudio(){
   const keep=await Promise.all(cand.map(i=>i.unversionedInputKind!=="browser_source"?true
     :obs.call("GetInputSettings",{inputName:i.inputName}).then(r=>r.inputSettings?.reroute_audio===true).catch(()=>false)));
   const aud=cand.filter((_,k)=>keep[k]);
-  const [mutes,mons]=await Promise.all([
+  const [mutes,mons,vols]=await Promise.all([
     Promise.all(aud.map(i=>obs.call("GetInputMute",{inputName:i.inputName}).then(r=>r.inputMuted).catch(()=>null))),
-    Promise.all(aud.map(i=>obs.call("GetInputAudioMonitorType",{inputName:i.inputName}).then(r=>r.monitorType).catch(()=>"")))]);
-  S.audio=aud.map((i,k)=>({name:i.inputName,muted:mutes[k],mon:mons[k],special:sp.has(i.inputName)})).filter(a=>a.muted!==null);
+    Promise.all(aud.map(i=>obs.call("GetInputAudioMonitorType",{inputName:i.inputName}).then(r=>r.monitorType).catch(()=>""))),
+    Promise.all(aud.map(i=>obs.call("GetInputVolume",{inputName:i.inputName}).then(r=>r.inputVolumeMul).catch(()=>1)))]);
+  S.audio=aud.map((i,k)=>({name:i.inputName,muted:mutes[k],mon:mons[k],vol:vols[k],special:sp.has(i.inputName)})).filter(a=>a.muted!==null);
   await loadMixerHidden();
   renderAudio();
 }
@@ -621,10 +622,13 @@ $("audio").addEventListener("click",e=>{const m=e.target.closest("[data-mon]");i
 // Always subscribed (see OBS.subs); about 9 KB/s, ignored while the Live tab isn't on screen.
 const LV={};
 const toDb=m=>m>0?20*Math.log10(m):-100;
+// A muted source's level is zeroed in [1], but [2] (before the fader) isn't: like OBS's own mixer, show that
+// times the fader, greyed out by the .muted style.
 obs.on("InputVolumeMeters",d=>{if(S.tab!=="tabLive"||!S.showAudio||document.hidden)return;const now=performance.now();
   for(const i of d.inputs){const L=LV[i.inputName]??={ch:[{db:-100,hold:-100,holdT:0},{db:-100,hold:-100,holdT:0}],at:0};
     const chs=i.inputLevelsMul;if(!chs.length)continue;L.at=now;
-    for(let k=0;k<2;k++){const c=chs[Math.min(k,chs.length-1)],p=toDb(c[1]),s=L.ch[k]; // mono -> both bars
+    const a=S.audio.find(x=>x.name===i.inputName),muted=a&&a.muted,vol=a&&a.vol!=null?a.vol:1;
+    for(let k=0;k<2;k++){const c=chs[Math.min(k,chs.length-1)],p=toDb(muted?c[2]*vol:c[1]),s=L.ch[k]; // mono -> both bars
       if(p>s.db)s.db=p;if(p>=s.hold){s.hold=p;s.holdT=now}}}});
 let meterLast=performance.now();
 (function meterLoop(now){
@@ -641,6 +645,7 @@ let meterLast=performance.now();
     m.previousElementSibling.lastChild.textContent=top>-60?`${top.toFixed(1)} dB`:"−∞ dB"}
   requestAnimationFrame(meterLoop)})(performance.now());
 obs.on("InputAudioMonitorTypeChanged",d=>{const a=S.audio.find(x=>x.name===d.inputName);if(a){a.mon=d.monitorType;renderAudio()}});
+obs.on("InputVolumeChanged",d=>{const a=S.audio.find(x=>x.name===d.inputName);if(a)a.vol=d.inputVolumeMul});
 obs.on("InputMuteStateChanged",d=>{const a=S.audio.find(x=>x.name===d.inputName);if(a){a.muted=d.inputMuted;renderAudio()}});
 ["InputCreated","InputRemoved","InputNameChanged"].forEach(ev=>obs.on(ev,()=>loadAudio().catch(()=>{})));
 // ticking/unticking "Control audio via OBS" in OBS updates the list straight away

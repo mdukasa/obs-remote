@@ -29,6 +29,7 @@ It never changes subscriptions with op 3 (Reidentify). obs-websocket 5.x (checke
 A Reidentify that's processed while the same connection closes is subtracted twice, which happens when a phone locks right after hiding the page.
 The count then stays one too low. Once it's low enough, OBS stops sending levels to *every* client, including OBS Remote on other phones, until OBS restarts.
 Before 1.6.2 the page re-identified on every tab switch and every time it was hidden, so busy installs hit this after a few days.
+Each channel comes as `[magnitude, peak, input peak]`. For a muted source obs-websocket zeroes the first two but not the input peak (before the fader). So, like OBS's mixer, a muted row shows input peak × fader (`GetInputVolume`, `InputVolumeChanged`), greyed out.
 Inputs are listed when their type can have audio. Browser sources are only listed when *Control audio via OBS* (`reroute_audio`) is ticked, as in OBS's own mixer.
 
 ## Start OBS from the phone
