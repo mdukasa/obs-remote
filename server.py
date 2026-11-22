@@ -27,6 +27,7 @@ import zipfile
 
 import autofix
 import listen
+import youtube
 
 UPDATE_ONLY = len(sys.argv) > 1 and sys.argv[1].lower() == "update"
 UPDATE_TAG = sys.argv[2] if UPDATE_ONLY and len(sys.argv) > 2 else None
@@ -40,7 +41,7 @@ REPO = "mdukasa/obs-remote"
 LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/tags/"  # + tag
 API_HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "obs-remote"}
-KEEP = {"Phone address.txt", "Phone address.html", "autofix.log"}  # local files an update never touches
+KEEP = {"Phone address.txt", "Phone address.html", "autofix.log", "youtube.log"}  # local files an update never touches
 _latest = {"at": 0.0, "release": None}
 
 
@@ -331,6 +332,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             except OSError as e:
                 return self.send_json(500, {"error": str(e)})
             return self.send_json(200, {"ok": True})
+        if self.path == "/api/youtube/golive":
+            # Fills in OBS's YouTube Broadcast Setup dialog on this PC (youtube.py). Same key as Start OBS.
+            if not listen.key_ok(self.headers.get("X-OBS-Remote-Key")):
+                return self.send_json(403, {"error": "Wrong OBS websocket password"})
+            try:
+                form = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 20000)) or b"{}")
+            except ValueError:
+                return self.send_json(400, {"error": "Bad request"})
+            r = youtube.go_live(form if isinstance(form, dict) else {})
+            return self.send_json(200 if r.get("ok") else 409, r)
         if self.path != "/api/update":
             return self.send_json(403, {"error": "Not allowed"})
         why = update_blocker()

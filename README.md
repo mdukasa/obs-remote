@@ -9,6 +9,7 @@ Control OBS Studio and your PTZ cameras from a phone on the same Wi-Fi. No app s
 </p>
 
 - **Live tab:** preview and program pictures, scenes with TAKE, stream and record, mute buttons with sound meters, and a switch for the [Advanced Scene Switcher](https://github.com/WarmUpTill/SceneSwitcher) plugin if you use it.
+- **Going live on YouTube:** if OBS is signed in to your YouTube account, **Start stream** asks for the title, description, privacy and the rest of OBS's *YouTube Broadcast Setup* questions on the phone, then fills that window in on the PC for you. With a stream key it just starts.
 - **Camera tab:** pan, tilt, zoom and focus, presets with thumbnails, and a red **LIVE** tag when the camera you're moving is on air. Swipe the picture to switch camera.
 
 <sub>Screenshots use made-up pictures, not real camera footage.</sub>
@@ -64,12 +65,13 @@ Details: [how auto-reconnect works](docs/HOW-IT-WORKS.md#auto-reconnect-of-froze
 | "OBS has no PTZ control for this app" | Install obs-ptz 1.0 (beta) or newer and set *Websocket access* = *Control*. |
 | Camera is very slow even at 100% | Its max speed in the camera's obs-ptz filter in OBS is low. |
 | Camera picture frozen | Wait about 20 s for the automatic fix, or press **Refresh camera**. If it happens often, try turning off *NDI Multicast* in the camera. |
+| "Couldn't go live" (YouTube) | The message says why. OBS's YouTube window may be waiting on the PC: finish it there. Nothing goes live until it's filled in. |
 | Camera keeps moving after the phone lost Wi-Fi | Press **Stop moving**, or recall a preset. |
 
 ## Uninstall
 Double-click `Uninstall.bat`, then delete the folder.
 
 ## Security
-Anyone who can open the page **and** knows the OBS WebSocket password can control OBS, which is the same access the password already gives. Listen and **Start OBS** also need the password. The firewall only allows the local network, plus your tailnet if you chose Tailscale; don't forward these ports on your router.
+Anyone who can open the page **and** knows the OBS WebSocket password can control OBS, which is the same access the password already gives. Listen, **Start OBS** and going live on YouTube also need the password. The firewall only allows the local network, plus your tailnet if you chose Tailscale; don't forward these ports on your router.
 
 How it works inside: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md). Screenshots, full-size demo pictures and the tools that make them: [obs-remote-assets](https://github.com/mdukasa/obs-remote-assets).

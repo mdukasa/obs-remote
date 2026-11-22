@@ -45,6 +45,22 @@ The server finds `obs64.exe` from OBS's installer entry (`HKLM\SOFTWARE\OBS Stud
 It starts OBS from its own folder and refuses (409) if OBS is already running.
 OBS opens on the desktop of whoever is signed in, because the server runs in that session.
 
+## Going live on YouTube (`youtube.py`, `youtube.ps1`)
+When OBS is signed in to a YouTube account (no stream key), it won't stream until someone fills in its *YouTube Broadcast Setup* dialog on the PC, and obs-websocket has no request for that.
+- **Detection:** the stream service is YouTube, profile parameter `Auth/Type` is YouTube and `YouTube/ChannelName` is set. Otherwise **Start stream** just sends `StartStream`.
+  Not "no stream key": after a broadcast OBS keeps that broadcast's key (and `broadcast_id`) in the stream settings. If OBS turns out to have no *Manage Broadcast* button, `youtube.ps1` answers `noAccount` and the phone just starts the stream.
+  If OBS's *No Broadcast Configured* message is open (someone pressed Start Streaming without a broadcast), `youtube.ps1` uses its *Manage Broadcast* button.
+- **The form** starts from OBS's remembered settings: profile parameters in category `YouTube` (`Title`, `Description`, `Privacy` public/unlisted/private, `CategoryID` YouTube's numbers, `Latency` normal/low/ultraLow, `MadeForKids`, `DVR`, `ChannelName`).
+- **Go live** saves the answers with `SetProfileParameter` (plus `RememberSettings=true`, `ScheduleForLater=false`), so OBS pre-fills its dialog with them. It then sends `POST /api/youtube/golive` (same headers as Start OBS).
+- **`youtube.ps1`** uses Windows UI Automation (built into Windows; no extra software):
+  1. clicks OBS's *Manage Broadcast* button;
+  2. checks the dialog shows the phone's answers, and sets the text boxes and tick boxes if not;
+  3. clicks *Create broadcast and start streaming*;
+  4. waits for the dialog to close, or reports OBS's error message.
+  Drop-down lists can't be changed from outside Qt, so if one disagrees (checked only when OBS is in English) it cancels instead and says so.
+  It searches inside OBS's main window: an open drop-down list hides the dialog from a desktop-wide search.
+- `youtube.ps1 -DryRun` (or `dryRun: true` in the request) fills in and checks the dialog, then cancels it, for testing without going live.
+
 ## Listen on the phone (`listen.py`)
 The Audio section always has a **Listen** button, and each source a headphone button. Nothing plays, and the server records nothing, until someone taps **Listen**.
 obs-websocket can't send sound, so the server on the OBS PC records it instead:

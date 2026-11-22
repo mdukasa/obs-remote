@@ -268,7 +268,9 @@ details.grp .grpb>.field:first-child,details.grp .grpb>div:first-child{margin-to
 .field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .camrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.camrow .field{min-width:0}.camrow select{width:100%}
 .field label{font-size:12px;color:var(--dim)}
-.field input{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px}
+.field input,.field textarea{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px}
+.field textarea{resize:vertical;min-height:72px}
+.ytrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ytrow .field{min-width:0}.ytrow select{width:100%}
 .check{display:flex;align-items:center;gap:10px;padding:8px 0}
 .check input{width:20px;height:20px;accent-color:var(--blue)}
 .hidelist{max-height:30vh;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:2px 12px;margin-bottom:12px}
@@ -617,9 +619,73 @@ function renderOutputs(stats){
       if(S.stream.outputCongestion>0.1)p.push(`congestion ${(S.stream.outputCongestion*100).toFixed(0)}%`)}
     $("stats").textContent=p.join(" · ")}
 }
-$("btnStream").onclick=()=>S.stream.outputActive
-  ?confirmSheet("Stop the stream?","Viewers will be disconnected straight away.","Stop stream",true,()=>obs.call("StopStream").then(()=>toast("Stream stopping")).catch(fail))
-  :confirmSheet("Start the stream?","OBS will go live to the configured service.","Go live",true,()=>obs.call("StartStream").then(()=>toast("Stream starting")).catch(fail));
+$("btnStream").onclick=async()=>{
+  if(S.stream.outputActive)return confirmSheet("Stop the stream?","Viewers will be disconnected straight away.","Stop stream",true,()=>obs.call("StopStream").then(()=>toast("Stream stopping")).catch(fail));
+  const yt=await ytAccount();
+  if(yt)return ytSheet(yt);
+  confirmSheet("Start the stream?","OBS will go live to the configured service.","Go live",true,()=>obs.call("StartStream").then(()=>toast("Stream starting")).catch(fail))};
+
+/* ---------- Go live on YouTube (OBS signed in to a YouTube account) ----------
+   Signed in (rather than using a stream key), OBS won't stream until its "YouTube Broadcast Setup" dialog is filled
+   in on the PC, and obs-websocket can't do that. So the phone asks the same questions, saves the answers as OBS's
+   remembered YouTube settings (which pre-fill that dialog), and the server (youtube.py) clicks through the dialog. */
+const YT_PRIVACY=[["public","Public"],["unlisted","Unlisted"],["private","Private"]];
+const YT_LATENCY=[["normal","Normal"],["low","Low"],["ultraLow","Ultra low"]];
+const YT_CATEGORY=[["17","Sports"],["19","Travel and Events"],["20","Gaming"],["22","People and blogs"],["23","Comedy"],["24","Entertainment"],
+  ["25","News and Politics"],["26","How-to and Style"],["27","Education"],["28","Science and Technology"],["29","Non-profits and Activism"]];
+const ytParam=n=>obs.call("GetProfileParameter",{parameterCategory:"YouTube",parameterName:n}).then(r=>r.parameterValue??"");
+async function ytAccount(){
+  try{const s=(await obs.call("GetStreamServiceSettings")).streamServiceSettings||{};
+    // Signed in = OBS keeps a YouTube login for this profile. (Not "no stream key": after a broadcast OBS keeps
+    // that broadcast's key in the settings.) If OBS turns out to have no Manage Broadcast button, youtube.ps1 says
+    // noAccount and the phone just starts the stream.
+    if(!/youtube/i.test(s.service||""))return null;
+    const auth=(await obs.call("GetProfileParameter",{parameterCategory:"Auth",parameterName:"Type"})).parameterValue||"";
+    if(!/youtube/i.test(auth))return null;
+    // the dialog is filled in by this page's own server, so it must be running on the OBS PC
+    const r=await fetch("/api/obs",{cache:"no-store"});if(!r.ok||(await r.json()).running===null)return null;
+    const k=["Title","Description","Privacy","CategoryID","Latency","MadeForKids","DVR","ChannelName"];
+    const v=Object.fromEntries(await Promise.all(k.map(async n=>[n,await ytParam(n)])));
+    return v.ChannelName?v:null}  // OBS saves the channel name when it signs in
+  catch{return null}}
+function ytSheet(v){
+  const opts=(list,cur,def)=>{const c=list.some(x=>x[0]===cur)?cur:def;return list.map(([k,n])=>`<option value="${k}"${k===c?" selected":""}>${n}</option>`).join("")};
+  const on=x=>/^(true|1)$/i.test(x);
+  sheet(`<h3>Go live on YouTube</h3><p>${v.ChannelName?`Channel: ${esc(v.ChannelName)}. `:""}OBS needs these before it can start. They're filled in on the PC for you.</p>
+    <div class="field"><label for="ytTitle">Title</label><input id="ytTitle" maxlength="100" value="${esc(v.Title||"")}"></div>
+    <div class="field"><label for="ytDesc">Description</label><textarea id="ytDesc" maxlength="5000">${esc(v.Description||"")}</textarea></div>
+    <div class="ytrow"><div class="field"><label for="ytPriv">Privacy</label><select id="ytPriv">${opts(YT_PRIVACY,v.Privacy,"public")}</select></div>
+      <div class="field"><label for="ytLat">Latency</label><select id="ytLat">${opts(YT_LATENCY,v.Latency,"normal")}</select></div></div>
+    <div class="field"><label for="ytCat">Category</label><select id="ytCat">${opts(YT_CATEGORY,v.CategoryID,"29")}</select></div>
+    <label class="tog"><span><b>Made for kids</b><small>YouTube's audience setting</small></span><input type="checkbox" class="sw" id="ytKids"${on(v.MadeForKids)?" checked":""}></label>
+    <label class="tog"><span><b>Let viewers rewind</b><small>YouTube's DVR option</small></span><input type="checkbox" class="sw" id="ytDvr"${v.DVR===""||on(v.DVR)?" checked":""}></label>
+    <div class="btns"><button data-close>Cancel</button><button class="danger" id="ytGo">Go live</button></div>`,
+    close=>$("ytGo").onclick=()=>{const t=$("ytTitle").value.trim();if(!t){toast("Give the broadcast a title",true);return $("ytTitle").focus()}
+      const pick=(list,id)=>list.find(x=>x[0]===$(id).value);
+      ytGoLive({title:t,description:$("ytDesc").value,privacy:pick(YT_PRIVACY,"ytPriv"),latency:pick(YT_LATENCY,"ytLat"),
+        category:pick(YT_CATEGORY,"ytCat"),kids:$("ytKids").checked,dvr:$("ytDvr").checked})})}
+let ytBusy=false;  // one Go live at a time: a second tap mustn't run the PC's dialog again
+async function ytGoLive(f){if(ytBusy)return;buzz();
+  const lock=on=>on?$("scrim").dataset.lock=1:delete $("scrim").dataset.lock;
+  sheet(`<h3>Going live…</h3><p>Setting up the broadcast in OBS on the PC. This takes a few seconds.</p>`);lock(true);
+  ytBusy=true;
+  try{
+    const set=(n,x)=>obs.call("SetProfileParameter",{parameterCategory:"YouTube",parameterName:n,parameterValue:String(x)});
+    for(const [n,x] of [["Title",f.title],["Description",f.description],["Privacy",f.privacy[0]],["CategoryID",f.category[0]],
+      ["Latency",f.latency[0]],["MadeForKids",f.kids],["DVR",f.dvr],["ScheduleForLater",false],["RememberSettings",true]])await set(n,x);
+    const r=await fetch("/api/youtube/golive",{method:"POST",headers:{"X-OBS-Remote":"1","X-OBS-Remote-Key":sha64("obs-remote-listen:"+cfg.pw),"Content-Type":"application/json"},
+      body:JSON.stringify({title:f.title,description:f.description,privacy:f.privacy[1],category:f.category[1],latency:f.latency[1],kids:f.kids,dvr:f.dvr,dryRun:!!f.dryRun})});
+    const j=await r.json().catch(()=>({}));
+    if(j.noAccount&&!f.dryRun){await obs.call("StartStream");lock(false);$("scrim").classList.remove("show");return toast("Stream starting")}
+    if(!r.ok||!j.ok){
+      // The stream is what counts: if OBS is live anyway (the dialog was finished some other way), say so.
+      // (give it a few seconds: OBS connects to YouTube just after the PC side finishes)
+      let live=false;
+      for(let i=0;i<8&&!f.dryRun&&!live;i++){live=await obs.call("GetStreamStatus").then(x=>x.outputActive).catch(()=>false);if(!live)await new Promise(z=>setTimeout(z,750))}
+      if(!live)throw new Error(j.error||`The OBS PC said ${r.status}`)}
+    lock(false);$("scrim").classList.remove("show");toast(f.dryRun?j.error:"Going live on YouTube")}
+  catch(e){lock(false);sheet(`<h3>Couldn't go live</h3><p>${esc(e.message)}</p><div class="btns one"><button data-close>OK</button></div>`)}
+  finally{ytBusy=false}}
 $("btnRec").onclick=()=>S.rec.outputActive
   ?confirmSheet("Stop recording?","The file will be finalised on the OBS PC.","Stop recording",true,()=>obs.call("StopRecord").then(r=>toast("Saved: "+(r.outputPath||"").split(/[\\/]/).pop())).catch(fail))
   :confirmSheet("Start recording?","Records to the OBS PC's recording folder.","Record",false,()=>obs.call("StartRecord").catch(fail));
