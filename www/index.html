@@ -328,9 +328,11 @@ const sha64=s=>b64(sha256(new TextEncoder().encode(s)));
 
 /* ---------- obs-websocket v5 client ---------- */
 class OBS{
-  constructor(){this.ws=null;this.id=0;this.pending=new Map();this.handlers={};this.ready=false;this.subs=1|4|8|16|64|512|1024}
-  // change event subscriptions on a live connection (op 3 Reidentify), e.g. volume meters on/off
-  reidentify(subs){if(subs===this.subs)return;this.subs=subs;if(this.ready)this.ws.send(JSON.stringify({op:3,d:{eventSubscriptions:subs}}))}
+  constructor(){this.ws=null;this.id=0;this.pending=new Map();this.handlers={};this.ready=false;this.subs=1|4|8|16|64|512|1024|(1<<16)}
+  // Subscriptions are set once, at login. Never change them with op 3 (Reidentify): obs-websocket 5.x
+  // miscounts its volume-meter listeners when a Reidentify arrives as the connection closes (a phone
+  // locking does exactly that). Each miss lowers the count for good, and once it's low enough OBS stops
+  // sending levels to every client until OBS restarts.
   on(ev,fn){(this.handlers[ev]??=[]).push(fn)}
   off(ev,fn){this.handlers[ev]=(this.handlers[ev]||[]).filter(f=>f!==fn)}
   emit(ev,d){(this.handlers[ev]||[]).forEach(f=>{try{f(d)}catch(e){console.error(e)}})}
@@ -564,11 +566,10 @@ function renderAudio(){
 $("btnAllAudio").onclick=()=>{S.showAllAudio=!S.showAllAudio;renderAudio()};
 $("audio").addEventListener("click",e=>{const b=e.target.closest("[data-mute]");if(!b)return;buzz();obs.call("ToggleInputMute",{inputName:b.dataset.mute}).catch(fail)});
 // volume meters: OBS sends InputVolumeMeters ~20x/s ([magnitude, peak, inputPeak] per channel, linear).
-// Only subscribed while the Live tab is on screen, so the phone isn't fed levels it doesn't show.
-const METERS=1<<16,LV={};
+// Always subscribed (see OBS.subs); about 9 KB/s, ignored while the Live tab isn't on screen.
+const LV={};
 const toDb=m=>m>0?20*Math.log10(m):-100;
-function syncMeters(){obs.reidentify((obs.subs&~METERS)|(S.tab==="tabLive"&&!document.hidden&&S.showAudio?METERS:0))}
-obs.on("InputVolumeMeters",d=>{const now=performance.now();
+obs.on("InputVolumeMeters",d=>{if(S.tab!=="tabLive"||!S.showAudio||document.hidden)return;const now=performance.now();
   for(const i of d.inputs){const L=LV[i.inputName]??={ch:[{db:-100,hold:-100,holdT:0},{db:-100,hold:-100,holdT:0}],at:0};
     const chs=i.inputLevelsMul;if(!chs.length)continue;L.at=now;
     for(let k=0;k<2;k++){const c=chs[Math.min(k,chs.length-1)],p=toDb(c[1]),s=L.ch[k]; // mono -> both bars
@@ -943,7 +944,7 @@ function savePreset(id){
 
 /* ---------- tabs ---------- */
 document.querySelectorAll("nav [data-tab]").forEach(b=>b.onclick=()=>{
-  stopMove();S.tab=b.dataset.tab;syncMeters();
+  stopMove();S.tab=b.dataset.tab;
   document.querySelectorAll("nav [data-tab]").forEach(x=>x.classList.toggle("sel",x===b));
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("sel",t.id===S.tab));
   if(S.tab==="tabCam"&&obs.ready)loadDevices().catch(fail);
@@ -1011,7 +1012,7 @@ function openSettings(force){
       if($("sShowAss")){S.showAss=$("sShowAss").checked;store.set("showAss",S.showAss);renderAss()}
       document.querySelectorAll("[data-hide]").forEach(c=>c.checked?S.hidden.delete(c.dataset.hide):S.hidden.add(c.dataset.hide));
       store.set("hidden",[...S.hidden]);renderScenes();
-      S.showAudio=$("sShowAudio").checked;store.set("showAudio",S.showAudio);renderAudio();syncMeters();
+      S.showAudio=$("sShowAudio").checked;store.set("showAudio",S.showAudio);renderAudio();
       const ctl=document.querySelector("input[name=sCtrl]:checked");if(ctl){S.ctrl=ctl.value;store.set("ctrl",S.ctrl);applyCtrl()}
       if(S.devices.length&&obs.ready){
         const c={names:{...(S.camCfg?.names||{})},pictures:{...(S.camCfg?.pictures||{})}};
@@ -1074,8 +1075,7 @@ async function runUpdate(){
 checkUpdate();setInterval(checkUpdate,6*3600e3);
 
 /* ---------- go ---------- */
-renderOutputs();syncMeters();
-document.addEventListener("visibilitychange",syncMeters);
+renderOutputs();
 if(!cfg.pw)openSettings(true);else connect();
 shotLoop();
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!obs.ready&&cfg.pw){clearTimeout(retryT);retry=0;connect()}else if(!document.hidden&&obs.ready)loadAll()});

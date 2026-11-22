@@ -18,7 +18,11 @@ In testing a frame cost OBS about 8 ms, and 25 fps caused no skipped render fram
 The Live tab uses 480 px JPEGs; the Camera tab uses 640 px.
 
 ## Audio meters
-The page subscribes to `InputVolumeMeters` (about 20 per second, about 9 KB/s) only while the Live tab is on screen, by re-identifying with op 3.
+The page subscribes to `InputVolumeMeters` (about 20 per second, about 9 KB/s) once, at login, and ignores them while the Live tab isn't on screen.
+It never changes subscriptions with op 3 (Reidentify). obs-websocket 5.x (checked on 5.7.4) counts meter listeners with a plain counter.
+A Reidentify that's processed while the same connection closes is subtracted twice, which happens when a phone locks right after hiding the page.
+The count then stays one too low. Once it's low enough, OBS stops sending levels to *every* client, including OBS Remote on other phones, until OBS restarts.
+Before 1.6.2 the page re-identified on every tab switch and every time it was hidden, so busy installs hit this after a few days.
 Inputs are listed when their type can have audio. Browser sources are only listed when *Control audio via OBS* (`reroute_audio`) is ticked, as in OBS's own mixer.
 
 ## PTZ (obs-ptz websocket vendor API)
