@@ -3,9 +3,9 @@
 Control OBS Studio and your PTZ cameras from a phone on the same Wi-Fi. No app store, no account: it's a web page you add to your home screen.
 
 <p align="center">
-  <img src="docs/img/live.png" width="270" alt="Live tab: preview and program pictures, TAKE, scenes, stream and recording, audio">
+  <img src="https://raw.githubusercontent.com/mdukasa/obs-remote/main/docs/img/live.png" width="270" alt="Live tab: preview and program pictures, TAKE, scenes, stream and recording, audio">
   &nbsp;&nbsp;
-  <img src="docs/img/camera.png" width="270" alt="Camera tab: camera picture, direction buttons, zoom, focus, speed and presets">
+  <img src="https://raw.githubusercontent.com/mdukasa/obs-remote/main/docs/img/camera.png" width="270" alt="Camera tab: camera picture, direction buttons, zoom, focus, speed and presets">
 </p>
 
 - **Live tab:** preview and program pictures, scenes with TAKE, stream and record, mute buttons with sound meters, and a switch for the [Advanced Scene Switcher](https://github.com/WarmUpTill/SceneSwitcher) plugin if you use it.
@@ -26,7 +26,7 @@ Control OBS Studio and your PTZ cameras from a phone on the same Wi-Fi. No app s
 4. **Double-click `Install.bat`** and click **Yes** when Windows asks to open the firewall to your local network.
 5. **Scan the QR code** with the phone's camera, enter the OBS WebSocket password, and add the page to the home screen.
 
-<p align="center"><img src="docs/img/installer.png" width="620" alt="The installer: four checks marked OK, then a QR code and the phone address"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/mdukasa/obs-remote/main/docs/img/installer.png" width="620" alt="The installer: four checks marked OK, then a QR code and the phone address"></p>
 
 It starts by itself whenever the PC signs in. Run `Install.bat` again any time to repair it. To see the QR code later, open `Phone address.html` in the folder.
 
