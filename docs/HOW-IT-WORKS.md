@@ -62,8 +62,22 @@ The PTZ link stayed connected, and re-selecting the NDI source fixed it every ti
 - **The fix:** `ndi_source_name` is set to empty, then back. At most once a minute per source.
   A source not seen moving, e.g. already frozen when the server started, gets one try. If it then stays still (a slide, a camera that's off), it's left alone until it moves again.
 - **On/off:** persistent data slot `obs-remote.settings` `{autofix}` (profile realm), default on.
-  `GET /api/autofix` returns `{running, enabled, error, watching, events}`, and Settings shows it. Fixes are also appended to `autofix.log`.
+  Saved in OBS, so it's the same for every phone. The watcher re-reads it on every round, so switching it off takes effect within 4 s.
+- **Status:** `GET /api/autofix` returns `{running, enabled, error, watching, events}`, and Settings shows it.
+  `running`/`error` come from the connection loop: if OBS is closed or the password is wrong, the thread retries every 15 s and reports why.
+- **History:** each fix (or failed reconnect) is appended to `autofix.log` as `YYYY-MM-DD HH:MM:SS  source  what`.
+  `events` keeps the last 20 in memory and is refilled from the end of `autofix.log` at startup (`load_history()`), so restarts and self-updates don't empty it.
+  `autofix.log` is in the updater's KEEP list and `.gitignore`.
+- **Cost:** one 320 px JPEG screenshot per watched source every 4 s, about 8 ms of OBS time each. Nothing is sent over the network: OBS and the watcher are on the same PC.
 - `OBS_REMOTE_OBS_HOST` points the watcher at another PC (testing only).
+
+### Timeline of a freeze
+```
+t=0     picture stops changing (OBS keeps showing the last frame)
+t=4-20  snapshots identical; the 3 different frames in the 40 s before prove it was live
+t~20    reconnect: ndi_source_name "" -> 0.8 s -> original name; logged
+t~22    picture live again; that camera isn't touched again for 60 s
+```
 
 ## Setup scripts
 - `setup/install.ps1` finds Python 3.8+ (or offers `winget install Python.Python.3.12`) and reads OBS's websocket config.

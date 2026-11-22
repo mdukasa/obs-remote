@@ -7,7 +7,8 @@ This watches the camera pictures through obs-websocket on this PC and does that 
 Which sources: NDI inputs that carry an obs-ptz camera, plus pictures chosen for a camera in the app.
 When is it frozen: the picture was moving (live cameras always change a little) and then shows exactly the
 same frame for FROZEN_SECS. Something that never moves, like a slide or a switched-off camera, is left alone.
-Each fix is logged to autofix.log next to this file and listed in the app's Settings.
+Each fix is logged to autofix.log next to this file and listed in the app's Settings; the list is reloaded from
+that file at startup. README.md (Auto-reconnect of frozen cameras) and docs/HOW-IT-WORKS.md explain it in full.
 """
 import base64
 import collections
@@ -243,5 +244,24 @@ def run(host=None):
         time.sleep(15)
 
 
+def load_history():
+    """Fill EVENTS from the end of autofix.log, so the list in Settings survives restarts and updates."""
+    try:
+        with open(LOG, encoding="utf-8") as f:
+            lines = collections.deque(f, maxlen=EVENTS.maxlen)
+    except OSError:
+        return
+    for line in lines:
+        parts = line.rstrip("\n").split("  ", 2)  # "2026-11-21 20:31:05  CAM02  picture frozen for 20 s, reconnected"
+        if len(parts) != 3:
+            continue
+        try:
+            t = time.mktime(time.strptime(parts[0], "%Y-%m-%d %H:%M:%S"))
+        except ValueError:
+            continue
+        EVENTS.append({"t": t, "source": parts[1], "what": parts[2]})
+
+
 def start():
+    load_history()
     threading.Thread(target=run, name="autofix", daemon=True).start()

@@ -959,7 +959,8 @@ async function loadAutofix(){
     :!a.watching.length?"No NDI cameras to watch."
     :`Watching ${a.watching.map(esc).join(", ")}.`+(last?` Last fix: ${esc(last.source)} at ${t(last.t)} (${today.length} today).`:" No freezes so far.");
   el.innerHTML=`<label class="check"><input type="checkbox" id="sAutofix" ${a.enabled?"checked":""}>Reconnect a camera automatically when its NDI picture freezes</label>
-    <p class="hint" style="margin:-6px 0 14px 30px;font-size:12px;color:var(--dim)">${info}</p>`}
+    <p class="hint" style="margin:-6px 0 6px 30px;font-size:12px;color:var(--dim)">If a camera's picture shows the exact same frame for 20 seconds after it was moving, the OBS PC re-selects its NDI source, at most once a minute. It never moves a camera or changes scenes, and works even with no phone open.</p>
+    <p class="hint" style="margin:0 0 14px 30px;font-size:12px;color:var(--dim)">${info}</p>`}
 
 /* ---------- self-update ----------
    server.py compares its VERSION with the one on GitHub and, on request, downloads main and restarts itself.
