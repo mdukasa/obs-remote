@@ -4,7 +4,5 @@
 
 # Left out of release downloads ("Source code (zip)", which the in-app updater also uses):
 # repo-only material that phones and the OBS PC never need.
-docs/screenshots export-ignore
-docs/img export-ignore
 .gitattributes export-ignore
 .gitignore export-ignore
