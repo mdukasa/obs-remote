@@ -1,16 +1,22 @@
 # How OBS Remote works
 
 ```
-phone browser ──http :8765──▶ server.py (static files only)
+phone browser ──http :8765──▶ server.py (the page, plus a few /api/ calls)
       │
       └──────ws :4455──▶ obs-websocket (built into OBS) ──CallVendorRequest "obs-ptz"──▶ obs-ptz plugin ──▶ cameras
 ```
 
-- `server.py` is a Python standard-library web server that only serves `www/`, with `Cache-Control: no-store` so phones always get the latest page.
+- `server.py` is a Python standard-library web server. It serves `www/` with `Cache-Control: no-store`, so phones always get the latest page.
+  Everything else the page needs from the OBS PC goes through small `/api/` calls: updates, auto-fix status, mixer-hidden sources, Listen and Start OBS.
+  OBS itself is controlled by the phone directly over obs-websocket.
   Port: first argument, else `OBS_REMOTE_PORT`, else 8765.
+  On Windows it binds without `SO_REUSEADDR`, which there would let it share a port another program already listens on (that program then gets the requests). It also checks that nothing answers on 127.0.0.1 first, and otherwise exits saying the port is taken.
 - `www/index.html` is the whole app: no build step and no external downloads. It speaks obs-websocket v5 directly.
 - A plain `http://` LAN page has no `crypto.subtle`, so the page has its own SHA-256 for the websocket login.
 - The password is stored in the phone browser's local storage.
+- **Sign-in link:** the installer's QR code opens `http://PC:8765/#pw=PASSWORD` (percent-encoded; `&port=N` when OBS's websocket isn't on 4455).
+  The page saves that like a typed-in login, then removes it from the address bar with `history.replaceState`, so a home-screen icon doesn't carry it.
+  Browsers never send the `#` part to the server, so it isn't in any request or log.
 
 ## Pictures
 Monitors call `GetSourceScreenshot` back to back, with one request in flight per monitor, so slow Wi-Fi lowers the frame rate instead of adding delay.
@@ -24,6 +30,16 @@ A Reidentify that's processed while the same connection closes is subtracted twi
 The count then stays one too low. Once it's low enough, OBS stops sending levels to *every* client, including OBS Remote on other phones, until OBS restarts.
 Before 1.6.2 the page re-identified on every tab switch and every time it was hidden, so busy installs hit this after a few days.
 Inputs are listed when their type can have audio. Browser sources are only listed when *Control audio via OBS* (`reroute_audio`) is ticked, as in OBS's own mixer.
+
+## Start OBS from the phone
+When the page can't connect to OBS, it asks `GET /api/obs` (`{running, canStart}`, from `tasklist`) and shows a banner:
+- *OBS is closed on the PC*, with **Start OBS**, when `obs64.exe` isn't running.
+- *OBS isn't answering*, when it runs but its WebSocket server is off.
+
+**Start OBS** sends `POST /api/obs/start` with `X-OBS-Remote: 1` and the same `X-OBS-Remote-Key` as Listen, so only phones that know the OBS password can start it.
+The server finds `obs64.exe` from OBS's installer entry (`HKLM\SOFTWARE\OBS Studio`) or the usual folder. Before starting it, it deletes leftover `%APPDATA%\obs-studio\.sentinel\run_*` files. OBS 32 writes one per run and removes it on a clean exit; one left over makes the next start stop at *OBS Studio Crash Detected… Run in Safe Mode?* until someone clicks. (OBS 32 ignores the old `--disable-shutdown-check`, which is still passed for older versions.)
+It starts OBS from its own folder and refuses (409) if OBS is already running.
+OBS opens on the desktop of whoever is signed in, because the server runs in that session.
 
 ## Listen on the phone (`listen.py`)
 Off unless *Settings → Live tab → Listen on this phone* is on, which is saved per phone.
@@ -101,18 +117,35 @@ t~22    picture live again; that camera isn't touched again for 60 s
 ```
 
 ## Setup scripts
-- `setup/install.ps1` finds Python 3.8+ (or offers `winget install Python.Python.3.12`) and reads OBS's websocket config.
-  It detects whether obs-ptz has websocket support by looking for `ptz_list_devices` in the DLL, then opens the firewall.
-  It starts `pythonw server.py` and adds a Startup shortcut.
-  Then it finds this PC's local-network IPv4 addresses, best route first.
-  Virtual adapters (Hyper-V, WSL, VirtualBox, VMware, Docker) and VPNs (Tailscale, ZeroTier, WireGuard, …) are skipped, matched on the adapter name and description.
-  It prints a QR code for the first address and writes `Phone address.txt` and `Phone address.html`. An update never touches these files.
+`setup/install.ps1` (run through `Install.bat`, which passes its switches on) goes through these steps in order:
+1. **Python:** finds Python 3.8+, or offers `winget install Python.Python.3.12`.
+2. **OBS WebSocket server:** reads obs-websocket's `config.json`. If the server is off, or OBS never set it up, it offers to turn it on.
+   It sets `server_enabled`, `auth_required` and `first_load: false`, keeping the existing port and password or making a 12-character password.
+3. **obs-ptz:** detects websocket support by looking for `ptz_list_devices` in the DLL.
+   If obs-ptz is missing (asks, default No) or too old (asks, default Yes), it can install the newest obs-ptz release numbered 1.0 or later, betas included, from GitHub (`*-windows-x64-Installer.exe`, or arm64).
+   That's an Inno Setup installer, run with `/SILENT /SUPPRESSMSGBOXES /NORESTART /SP-`; Windows asks for admin permission.
+   Steps 2 and 3 need OBS closed: OBS saves its own copy of the settings on exit, and keeps the plugin file open. Setup asks once, then opens OBS again from the same path.
+4. **Tailscale (optional):** if the PC has Tailscale, it asks whether phones may connect over it; if not, it offers to install it (`winget install Tailscale.Tailscale`) and waits up to 3 minutes for the sign-in.
+   It doesn't ask again once the firewall rules include Tailscale's range. `-Tailscale` / `-NoTailscale` change the answer.
+5. **Firewall:** runs `firewall.ps1` elevated whenever the rules are missing or don't match the Tailscale choice.
+6. **Server:** stops this folder's old server, and any other OBS Remote listening on the same port (e.g. a copy in another folder). It starts `pythonw server.py` and adds a Startup shortcut.
+   It then checks the page on 127.0.0.1, bypassing any proxy. If there's no answer, it says why: the program holding the port, or the server's own error.
+7. **Phone address:** finds this PC's local-network IPv4 addresses, best route first.
+   Virtual adapters (Hyper-V, WSL, VirtualBox, VMware, Docker) and VPNs (Tailscale, ZeroTier, WireGuard, …) are skipped, matched on the adapter name and description.
+   It prints a QR code for the first address, with the OBS login in the link (see *Sign-in link*), and writes `Phone address.txt` (plain addresses) and `Phone address.html` (QR codes with the login). An update never touches these files.
+   With Tailscale on, it offers to print a second code for the PC's 100.x address. `Phone address.html` also gets it as a folded-away *Show the Tailscale code* card (qr.py: a label starting with `?`).
+   Re-run setup after changing OBS's websocket password, or the codes sign phones in with the old one.
+
+Notes:
 - `setup/qr.py` is a standard-library QR encoder: byte mode, error correction level M, versions 1-10 (up to 213 bytes).
   `--rows URL` prints the matrix as 0/1 lines, which the installer draws in the console with half-block characters, black on white.
   `--html` writes the page with SVG codes. It was checked by decoding hundreds of random URLs with OpenCV.
 - `install.ps1` must stay ASCII-only: Windows PowerShell 5.1 reads BOM-less scripts in the ANSI code page. That's why the block characters are built with `[char]`.
-  Switches: `-Port`, `-SkipFirewall`, `-SkipStartup`.
+  Build an argument list in a variable before passing it to `Start-Process -ArgumentList`: written inline, `@(...) + ...` is read as stray extra arguments, and the call fails.
+  Switches: `-Port`, `-SkipFirewall`, `-SkipStartup`, `-Tailscale`, `-NoTailscale`.
 - `setup/firewall.ps1` runs elevated. It adds two inbound TCP rules (page port and OBS websocket port), limited to `RemoteAddress LocalSubnet`, or removes them with `-Remove`.
+  With `-Tailscale` (when Tailscale was chosen) they also allow `100.64.0.0/10`, which only devices in the tailnet can reach. A Tailscale address is a /32, so `LocalSubnet` alone never covers other tailnet devices.
+  The installer re-runs it whenever the rules don't match the Tailscale choice.
 - `setup/uninstall.ps1` stops the server, removes the shortcut and removes the rules.
 
 ## Updates (GitHub Releases)

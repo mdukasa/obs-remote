@@ -1,7 +1,8 @@
 """Tiny QR code maker for the installer. Python standard library only.
 
     python qr.py --rows URL                  # the QR as lines of 0/1 (1 = dark), quiet zone included
-    python qr.py --html OUT.html "Label|URL" ...   # a page with a big QR code per address
+    python qr.py --html OUT.html "Label|URL[|QR]" ...   # a page with a big QR code per address ("?Label" = folded away)
+                                                    # (QR = what the code holds, if not URL, e.g. URL + login)
 
 Byte mode, error correction level M, versions 1-10 (up to 213 bytes, plenty for a URL).
 Follows ISO/IEC 18004; the structure mirrors Project Nayuki's reference implementation.
@@ -258,16 +259,23 @@ def svg(text, scale=8, quiet=4):
 
 
 def html_page(items):
-    cards = "".join(
-        f'<div class="card"><h2>{html.escape(label)}</h2>{svg(url)}<a href="{html.escape(url)}">{html.escape(url)}</a></div>'
-        for label, url in items)
+    card = lambda it: (f'<div class="card"><h2>{html.escape(it[0].lstrip("?"))}</h2>{svg(it[-1])}'
+                       f'<a href="{html.escape(it[1])}">{html.escape(it[1])}</a></div>')
+    cards = "".join(card(it) for it in items if not it[0].startswith("?"))
+    extra = [it for it in items if it[0].startswith("?")]  # "?Label": folded away until asked for (e.g. Tailscale)
+    if extra:
+        cards += ('<details><summary>Show the Tailscale code</summary><p>For phones away from this network.'
+                  ' The phone needs the Tailscale app, signed in to the same tailnet as this PC.</p>'
+                  f'<div class="wrap">{"".join(card(it) for it in extra)}</div></details>')
     return f"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OBS Remote - phone address</title>
 <style>body{{font:16px system-ui,sans-serif;background:#0e1116;color:#e6edf3;margin:0;padding:24px;text-align:center}}
 h1{{font-size:22px;margin:0 0 6px}}p{{color:#8b949e;margin:0 0 20px}}.wrap{{display:flex;flex-wrap:wrap;gap:20px;justify-content:center}}
 .card{{background:#161b22;border:1px solid #2a323d;border-radius:14px;padding:16px}}h2{{font-size:16px;margin:0 0 10px}}
-svg{{display:block;margin:0 auto 10px;border-radius:6px;max-width:72vw;height:auto}}a{{color:#58a6ff;word-break:break-all}}</style>
-<h1>OBS Remote</h1><p>Point your phone's camera at a code, then open the link. Then enter the OBS WebSocket password and add it to your home screen.</p>
+svg{{display:block;margin:0 auto 10px;border-radius:6px;max-width:72vw;height:auto}}a{{color:#58a6ff;word-break:break-all}}
+details{{flex-basis:100%;margin-top:8px}}summary{{cursor:pointer;color:#58a6ff;padding:10px}}details p{{margin:4px 0 16px}}</style>
+<h1>OBS Remote</h1><p>Point your phone's camera at a code and open the link. It signs the phone in to OBS by itself. Then add it to your home screen.<br>
+Keep this page to yourself: the codes contain the OBS WebSocket password.</p>
 <div class="wrap">{cards}</div></html>"""
 
 
@@ -275,7 +283,7 @@ if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "--rows":
         print("\n".join(rows(sys.argv[2])))
     elif len(sys.argv) >= 4 and sys.argv[1] == "--html":
-        items = [a.split("|", 1) for a in sys.argv[3:]]
+        items = [a.split("|", 2) for a in sys.argv[3:]]
         with open(sys.argv[2], "w", encoding="utf-8") as f:
             f.write(html_page(items))
     else:

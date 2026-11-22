@@ -162,6 +162,71 @@ def mixer_hidden(collection):
 RESTART = threading.Event()
 
 
+# ---- start OBS from the phone (when it's closed or has crashed) ----------------------------------------
+NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
+
+
+def obs_running():
+    if os.name != "nt":
+        return None
+    try:
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq obs64.exe", "/NH", "/FO", "CSV"], capture_output=True,
+                             text=True, timeout=10, creationflags=NO_WINDOW).stdout
+        return "obs64.exe" in out.lower()
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def obs_exe():
+    """obs64.exe, from OBS's installer entry in the registry, else the usual folder."""
+    if os.name != "nt":
+        return None
+    dirs = []
+    try:
+        import winreg
+        for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\OBS Studio", 0, winreg.KEY_READ | view) as k:
+                    dirs.append(winreg.QueryValueEx(k, "")[0])
+            except OSError:
+                pass
+    except ImportError:
+        pass
+    dirs += [os.path.join(os.environ.get(v, ""), "obs-studio") for v in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)")]
+    for d in dirs:
+        exe = os.path.join(d, "bin", "64bit", "obs64.exe")
+        if d and os.path.isfile(exe):
+            return exe
+    return None
+
+
+def clear_crash_markers():
+    """OBS 32 writes %APPDATA%/obs-studio/.sentinel/run_<id> while it runs and deletes it on a clean exit. A file
+    left there makes the next start ask "OBS Studio Crash Detected - Run in Safe Mode?", and waits for a click
+    nobody at the PC may give. Only called while OBS isn't running, so any such file is from a crash."""
+    d = os.path.join(os.environ.get("APPDATA", ""), "obs-studio", ".sentinel")
+    try:
+        for name in os.listdir(d):
+            if name.startswith("run_"):
+                try:
+                    os.remove(os.path.join(d, name))
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+
+def start_obs():
+    exe = obs_exe()
+    if not exe:
+        raise OSError("OBS isn't installed in the usual place on this PC")
+    clear_crash_markers()
+    # Run from its own folder, as its shortcut does. --disable-shutdown-check did the same job before OBS 32
+    # (which ignores it); kept for older OBS versions.
+    subprocess.Popen([exe, "--disable-shutdown-check"], cwd=os.path.dirname(exe), close_fds=True,
+                     creationflags=0x00000008 | 0x00000200)  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+
+
 def restart_later(srv):
     """Stop serving; the main program then starts the new server.py (see the bottom of this file).
     The relaunch must not happen in this thread: once serve_forever() returns the program ends, which would kill it."""
@@ -209,6 +274,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.split("?")[0] == "/api/mixer-hidden":
             q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send_json(200, {"hidden": mixer_hidden((q.get("collection") or [""])[0])})
+        if self.path.split("?")[0] == "/api/obs":
+            return self.send_json(200, {"running": obs_running(), "canStart": bool(obs_exe())})
         if self.path.split("?")[0] == "/api/listen-state":
             dev = listen.STATE["device"]
             if not dev and os.name == "nt":
@@ -250,8 +317,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         # The custom header can't be sent cross-site without a CORS preflight, which this server never allows,
-        # so only the app's own page can start an update.
-        if self.path != "/api/update" or self.headers.get("X-OBS-Remote") != "1":
+        # so only the app's own page can start an update or OBS.
+        if self.headers.get("X-OBS-Remote") != "1":
+            return self.send_json(403, {"error": "Not allowed"})
+        if self.path == "/api/obs/start":
+            # Starting OBS needs the same key as Listen: proof the phone knows OBS's websocket password.
+            if not listen.key_ok(self.headers.get("X-OBS-Remote-Key")):
+                return self.send_json(403, {"error": "Wrong OBS websocket password"})
+            if obs_running():
+                return self.send_json(409, {"error": "OBS is already running"})
+            try:
+                start_obs()
+            except OSError as e:
+                return self.send_json(500, {"error": str(e)})
+            return self.send_json(200, {"ok": True})
+        if self.path != "/api/update":
             return self.send_json(403, {"error": "Not allowed"})
         why = update_blocker()
         if why:
@@ -297,17 +377,36 @@ if __name__ == "__main__" and UPDATE_ONLY:
     print(f"Now at version {install_update(UPDATE_TAG)}. Run Install.bat to restart it.")
     sys.exit(0)
 
+class Server(http.server.ThreadingHTTPServer):
+    # http.server turns on SO_REUSEADDR. On Windows that lets this server share a port another program already
+    # listens on, and that program then gets the requests (seen: a stray Python script answering 501 on 8765).
+    # Without it, Windows refuses a taken port, and the error below says so.
+    allow_reuse_address = os.name != "nt"
+    allow_reuse_port = False
+
+
+def port_taken():
+    """Is something already answering on this port? (Catches a program bound to 127.0.0.1 only.)"""
+    try:
+        socket.create_connection(("127.0.0.1", PORT), timeout=0.5).close()
+        return True
+    except OSError:
+        return False
+
+
 if __name__ == "__main__":
-    srv = None
+    srv, err = None, None
     for attempt in range(20):  # after an update the old copy may still be letting go of the port
         try:
-            srv = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), functools.partial(Handler, directory=ROOT))
+            if port_taken():
+                raise OSError("another program is answering on it")
+            srv = Server(("0.0.0.0", PORT), functools.partial(Handler, directory=ROOT))
             break
         except OSError as e:
             err = e
             time.sleep(0.5)
     if srv is None:
-        sys.exit(f"Can't use port {PORT} ({err}). Is OBS Remote already running?")
+        sys.exit(f"Can't use port {PORT}: {err}. Close the program using it, or run Install.bat -Port 8766.")
     autofix.start()
     if sys.stdout:
         print("OBS Remote is running. On your phone (same Wi-Fi), open:")

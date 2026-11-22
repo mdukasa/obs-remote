@@ -1,7 +1,7 @@
 # OBS Remote - installer for Windows. Run it through Install.bat.
 # Safe to run again: it repairs or updates an existing install.
 # Keep this file ASCII-only: Windows PowerShell 5.1 reads BOM-less scripts in the ANSI code page.
-param([int]$Port = 8765, [switch]$SkipFirewall, [switch]$SkipStartup)
+param([int]$Port = 8765, [switch]$SkipFirewall, [switch]$SkipStartup, [switch]$Tailscale, [switch]$NoTailscale)
 $ErrorActionPreference = 'Stop'
 $root   = Split-Path -Parent $PSScriptRoot
 $server = Join-Path $root 'server.py'
@@ -24,8 +24,6 @@ function Hint($t) { Say "              $t" Yellow }
 Clear-Host
 Say
 Say '  OBS Remote setup' Cyan
-Say '  ================' Cyan
-Say '  Sets up the phone remote for OBS on this PC. It takes about a minute.'
 Say
 
 # ---- 1. Python ---------------------------------------------------------------------------
@@ -76,61 +74,197 @@ if (-not (Test-Path $pyw)) { $pyw = $py }
 Step 1 'Python' OK ((& $py -c "import sys;print('version %d.%d' % sys.version_info[:2])") 2>$null)
 
 # ---- 2. OBS --------------------------------------------------------------------------------
-$obsPort = 4455
-$wsCfg = Join-Path $env:APPDATA 'obs-studio\plugin_config\obs-websocket\config.json'
-if (Test-Path $wsCfg) {
-    $ws = Get-Content $wsCfg -Raw | ConvertFrom-Json
-    if ($ws.server_port) { $obsPort = [int]$ws.server_port }
-    if ($ws.server_enabled) {
-        Step 2 'OBS remote control' OK "WebSocket server is on (port $obsPort)"
-        if (-not $ws.auth_required) { Hint "It has no password, so anyone on this network could control OBS. Consider setting one." }
-    } else {
-        Step 2 'OBS remote control' WARN 'WebSocket server is OFF'
-        Hint "In OBS: Tools > WebSocket Server Settings > tick 'Enable WebSocket server'."
+# Some changes need OBS closed: it keeps its settings and plugins open and saves its own copy on exit.
+# Setup asks once, remembers where OBS was, and opens it again at the end of the OBS steps.
+$script:obsExe = $null
+function Close-Obs($why) {
+    $o = @(Get-Process obs64 -ErrorAction SilentlyContinue)
+    if (-not $o.Count) { return $true }
+    if (-not $script:obsExe) { try { $script:obsExe = $o[0].Path } catch {} }
+    Hint "OBS is open. To $why, save your work and close OBS, then press Enter."
+    if ((Read-Host '              (press Enter when OBS is closed, or type s to skip)') -match '^[sS]') { return $false }
+    foreach ($i in 1..10) { if (-not @(Get-Process obs64 -ErrorAction SilentlyContinue).Count) { return $true }; Start-Sleep 1 }
+    Hint 'OBS is still open, so this was skipped. Run Install.bat again later.'
+    return $false
+}
+function Open-ObsAgain {
+    if ($script:obsExe -and (Test-Path $script:obsExe) -and -not @(Get-Process obs64 -ErrorAction SilentlyContinue).Count) {
+        Start-Process $script:obsExe -WorkingDirectory (Split-Path $script:obsExe)
+        Hint 'Opened OBS again.'
     }
+}
+function Write-Utf8($path, $text) { [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding $false)) }
+
+$obsPort = 4455
+$obsPw = ''   # goes into the phone QR code, so one scan opens the app AND signs in
+$wsCfg = Join-Path $env:APPDATA 'obs-studio\plugin_config\obs-websocket\config.json'
+$ws = if (Test-Path $wsCfg) { Get-Content $wsCfg -Raw | ConvertFrom-Json } else { $null }
+if (-not ($ws -and $ws.server_enabled)) {
+    Step 2 'OBS remote control' WARN $(if ($ws) { 'WebSocket server is OFF' } else { "OBS's WebSocket server isn't set up yet" })
+    if ((Read-Host '              Turn it on now? (Y/n)') -notmatch '^[nN]' -and (Close-Obs 'turn it on')) {
+        # obs-websocket's own settings file. Keep its port and password; make a password if there is none.
+        if (-not $ws) { $ws = [pscustomobject]@{} }
+        $pw = if ($ws.server_password) { [string]$ws.server_password } else {
+            $b = New-Object byte[] 12; (New-Object Security.Cryptography.RNGCryptoServiceProvider).GetBytes($b)
+            ([Convert]::ToBase64String($b) -replace '[+/=]', '').Substring(0, 12) }
+        $new = [ordered]@{ alerts_enabled = [bool]$ws.alerts_enabled; auth_required = $true; first_load = $false
+                           server_enabled = $true; server_password = $pw
+                           server_port = $(if ($ws.server_port) { [int]$ws.server_port } else { 4455 }) }
+        New-Item -ItemType Directory -Force (Split-Path $wsCfg) | Out-Null
+        Write-Utf8 $wsCfg ($new | ConvertTo-Json)
+        $ws = Get-Content $wsCfg -Raw | ConvertFrom-Json
+        $turnedOn = $true
+    }
+}
+if ($ws) {
+    if ($ws.server_port) { $obsPort = [int]$ws.server_port }
+    if ($ws.auth_required -and $ws.server_password) { $obsPw = [string]$ws.server_password }
+}
+if ($ws -and $ws.server_enabled) {
+    Step 2 'OBS remote control' OK ("WebSocket server is on (port $obsPort)" + $(if ($turnedOn) { ', just turned on' }))
+    if (-not $ws.auth_required) { Hint "It has no password, so anyone on this network could control OBS. Consider setting one." }
 } else {
-    Step 2 'OBS remote control' WARN "couldn't find OBS's settings"
-    Hint "Open OBS once, then Tools > WebSocket Server Settings > tick 'Enable WebSocket server'."
+    Hint "Phones can't connect until it's on. In OBS: Tools > WebSocket Server Settings > Enable WebSocket server."
 }
 
 # obs-ptz: the Camera tab needs a build with websocket control (1.0 beta or newer)
-$ptzDll = @("$env:ProgramData\obs-studio\plugins\obs-ptz\bin\64bit\obs-ptz.dll",
-            "$env:ProgramFiles\obs-studio\obs-plugins\64bit\obs-ptz.dll") | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $ptzDll) {
-    Step 0 'PTZ cameras' INFO 'obs-ptz not installed (fine if you have no PTZ cameras)'
-} else {
-    $txt = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($ptzDll))
-    $ver = (Get-Item $ptzDll).VersionInfo.ProductVersion
-    if ($txt.Contains('ptz_list_devices')) {
-        Step 0 'PTZ cameras' OK "obs-ptz $ver"
-        Hint "In OBS: PTZ Controls dock > Settings > Websocket access = 'Control'."
-    } else {
-        Step 0 'PTZ cameras' WARN "obs-ptz $ver is too old for phone control"
-        Hint "Install obs-ptz 1.0 (beta) or newer: https://github.com/glikely/obs-ptz/releases"
+function Get-Ptz {  # -> $null (not installed), or @{Dll; Version; Ok}
+    $dll = @("$env:ProgramData\obs-studio\plugins\obs-ptz\bin\64bit\obs-ptz.dll",
+             "$env:ProgramFiles\obs-studio\obs-plugins\64bit\obs-ptz.dll") | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $dll) { return $null }
+    $txt = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($dll))
+    @{ Dll = $dll; Version = (Get-Item $dll).VersionInfo.ProductVersion; Ok = $txt.Contains('ptz_list_devices') }
+}
+# Newest obs-ptz release with websocket control (1.0 or later; its betas are GitHub pre-releases).
+function Find-PtzRelease {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+    $rels = Invoke-RestMethod 'https://api.github.com/repos/glikely/obs-ptz/releases?per_page=20' -Headers @{ 'User-Agent' = 'obs-remote-setup' } -TimeoutSec 20
+    foreach ($r in $rels) {
+        if ($r.draft -or $r.tag_name -notmatch '^v?(\d+)\.') { continue }
+        if ([int]$Matches[1] -lt 1) { continue }
+        $a = $r.assets | Where-Object { $_.name -like "*windows-$arch-Installer.exe" } | Select-Object -First 1
+        if ($a) { return @{ Tag = $r.tag_name; Url = $a.browser_download_url; Name = $a.name } }
     }
+    return $null
+}
+function Install-Ptz {
+    try { $rel = Find-PtzRelease } catch { $rel = $null }
+    if (-not $rel) { Hint "Couldn't reach GitHub. Get it from https://github.com/glikely/obs-ptz/releases"; return }
+    # OBS keeps the plugin file open, so it has to be closed while obs-ptz is installed.
+    if (-not (Close-Obs 'install obs-ptz')) { return }
+    $exe = Join-Path $env:TEMP $rel.Name
+    Say "              Downloading obs-ptz $($rel.Tag)..."
+    try { Invoke-WebRequest $rel.Url -OutFile $exe -UseBasicParsing -TimeoutSec 300 }
+    catch { Hint "The download failed. Get it from https://github.com/glikely/obs-ptz/releases"; return }
+    Say '              Installing. Windows may ask for permission: click Yes.' Cyan
+    try {
+        # Inno Setup installer: /SILENT shows only a progress bar; it puts the plugin where OBS looks for it.
+        $p = Start-Process $exe -ArgumentList '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-' -Wait -PassThru
+        if ($p.ExitCode -ne 0) { Hint "obs-ptz's installer stopped (code $($p.ExitCode))." }
+    } catch { Hint 'Permission was declined, so obs-ptz was not installed.' }
+    Remove-Item $exe -ErrorAction SilentlyContinue
 }
 
+$ptz = Get-Ptz
+if (-not $ptz) {
+    Step 0 'PTZ cameras' INFO 'obs-ptz not installed (fine if you have no PTZ cameras)'
+    if ((Read-Host '              Do you have PTZ cameras? Install obs-ptz for the Camera tab now? (y/N)') -match '^[yY]') { Install-Ptz; $ptz = Get-Ptz }
+} elseif (-not $ptz.Ok) {
+    Step 0 'PTZ cameras' WARN "obs-ptz $($ptz.Version) is too old for phone control"
+    if ((Read-Host '              Update obs-ptz to the newest version now? (Y/n)') -notmatch '^[nN]') { Install-Ptz; $ptz = Get-Ptz }
+} else { $ptz.Shown = $true }
+# The phone needs obs-ptz's "Websocket access" set to Control; setup can't read that, so it says so once.
+if ($ptz -and $ptz.Ok) { Step 0 'PTZ cameras' OK "obs-ptz $($ptz.Version)$(if (-not $ptz.Shown) { ' installed' }); set its Websocket access to Control" }
+elseif ($ptz -and -not $ptz.Shown) { Hint "Install obs-ptz 1.0 (beta) or newer: https://github.com/glikely/obs-ptz/releases" }
+Open-ObsAgain  # if setup had OBS closed for the WebSocket server or obs-ptz
+
+# ---- Tailscale (optional): reach OBS Remote from phones away from this network --------------------------
+# Tailscale is a free VPN: phones with its app, signed in to the same account (tailnet), reach this PC from
+# anywhere. Asked once; the answer is kept in the firewall rules (re-run with -Tailscale / -NoTailscale to change).
+function Get-TailscaleIP {
+    $ip = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {
+        $_.IPAddress -like '100.*' -and
+        "$($_.InterfaceAlias) $((Get-NetAdapter -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue).InterfaceDescription)" -match 'Tailscale' })
+    if ($ip.Count) { $ip[0].IPAddress } else { $null }
+}
+function Test-TsRule {  # do the existing rules already let Tailscale in?
+    $r = @(Get-NetFirewallRule -DisplayName 'OBS Remote - phone page' -ErrorAction SilentlyContinue)
+    $r.Count -and ((($r[0] | Get-NetFirewallAddressFilter).RemoteAddress -join ',') -like '*100.64.0.0*')
+}
+$tsIP = Get-TailscaleIP
+$tsExe = "$env:ProgramFiles\Tailscale\tailscale-ipn.exe"
+if ($NoTailscale) { $useTs = $false }
+elseif ($Tailscale -or (Test-TsRule)) { $useTs = $true }
+else {
+    if ($tsIP) {
+        $useTs = (Read-Host '        Tailscale is on this PC. Let phones connect over it too, from anywhere? (y/N)') -match '^[yY]'
+    } else {
+        $useTs = (Read-Host '        Optional: set up Tailscale, for phones away from this Wi-Fi? (y/N)') -match '^[yY]'
+        if ($useTs) {
+            if (-not (Test-Path $tsExe) -and (Get-Command winget -ErrorAction SilentlyContinue)) {
+                & winget install --id Tailscale.Tailscale -e --accept-package-agreements --accept-source-agreements
+            }
+            if (Test-Path $tsExe) {
+                Start-Process $tsExe -ErrorAction SilentlyContinue
+                Say '   Sign in to Tailscale: click its icon by the clock (or the window that opens) > Log in.' Cyan
+                Write-Host '   Waiting for Tailscale (up to 3 minutes) ' -NoNewline
+                foreach ($i in 1..90) { $tsIP = Get-TailscaleIP; if ($tsIP) { break }; Write-Host '.' -NoNewline; Start-Sleep 2 }
+                Say
+            }
+        }
+    }
+}
+if ($useTs -and -not $tsIP) {
+    Step 0 'Tailscale' WARN 'not connected yet'
+    Hint 'Sign in to Tailscale on this PC, then run Install.bat again.'
+    $useTs = $false
+} elseif ($useTs) { Step 0 'Tailscale' OK "phones on your tailnet can connect ($tsIP)" }
+elseif ($tsIP) { Step 0 'Tailscale' INFO 'not used (run Install.bat -Tailscale to turn on)' }
+
 # ---- 3. Firewall (needs admin, asks once) ----------------------------------------------------
-function Test-Rule($name) { [bool](Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue) }
+# With Tailscale chosen, the rules also let in its 100.64.0.0/10 addresses (devices in the same tailnet).
+function Test-Rule($name) {
+    $r = @(Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue)
+    if (-not $r.Count) { return $false }
+    return (((($r[0] | Get-NetFirewallAddressFilter).RemoteAddress -join ',') -like '*100.64.0.0*') -eq [bool]$useTs)
+}
 $need = (-not $SkipFirewall) -and (-not (Test-Rule 'OBS Remote - phone page') -or -not (Test-Rule 'OBS Remote - OBS websocket'))
 if ($need) {
-    Say '              Windows will now ask for permission to let phones on this network connect. Click Yes.' Cyan
+    Say '              Windows will ask for permission next: click Yes.' Cyan
+    # Build the list first: written inline after -ArgumentList, "+ ..." would become stray extra arguments.
+    $fwArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSScriptRoot\firewall.ps1`"", '-Port', $Port, '-ObsPort', $obsPort)
+    if ($useTs) { $fwArgs += '-Tailscale' }
     try {
-        $p = Start-Process powershell -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList @(
-            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSScriptRoot\firewall.ps1`"", '-Port', $Port, '-ObsPort', $obsPort)
-        if ($p.ExitCode -eq 0) { Step 3 'Windows Firewall' OK 'phones on this network can connect' }
+        $p = Start-Process powershell -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList $fwArgs
+        if ($p.ExitCode -eq 0) { Step 3 'Windows Firewall' OK ('phones on this network' + $(if ($useTs) { ' and Tailscale' }) + ' can connect') }
         else { Step 3 'Windows Firewall' WARN "couldn't add the rules (code $($p.ExitCode))"; Hint 'Phones may not be able to connect. Run Install.bat again to retry.' }
     } catch {
-        Step 3 'Windows Firewall' WARN 'permission was declined'
-        Hint "Phones may not connect until ports $Port and $obsPort are allowed. Run Install.bat again and click Yes."
+        # 1223 = the person clicked No on Windows' permission prompt; anything else is a real error, so show it
+        if ($_.Exception.NativeErrorCode -eq 1223 -or "$($_.Exception.Message)" -match 'cancel') {
+            Step 3 'Windows Firewall' WARN 'permission was declined'
+            Hint 'Phones may not connect. Run Install.bat again and click Yes.'
+        } else {
+            Step 3 'Windows Firewall' WARN "couldn't add the rules"
+            Hint "$($_.Exception.Message)"
+        }
     }
 } elseif ($SkipFirewall) { Step 3 'Windows Firewall' INFO 'skipped (-SkipFirewall)' }
-else { Step 3 'Windows Firewall' OK 'phones on this network can connect' }
+else { Step 3 'Windows Firewall' OK ('phones on this network' + $(if ($useTs) { ' and Tailscale' }) + ' can connect') }
 
 # ---- 4. Start now + at every sign-in ------------------------------------------------------------
 Get-CimInstance Win32_Process -Filter "Name like 'python%.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -like "*$server*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-Start-Process -FilePath $pyw -ArgumentList "`"$server`"", $Port -WorkingDirectory $root -WindowStyle Hidden
+# Another OBS Remote (e.g. an older copy in a different folder) on the same port would stop this one starting.
+foreach ($c in @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)) {
+    $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $($c.OwningProcess)" -ErrorAction SilentlyContinue
+    if ($proc -and $proc.Name -like 'python*' -and $proc.CommandLine -like '*server.py*') {
+        Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+        Hint "Stopped another OBS Remote that was using port $Port."
+        Start-Sleep -Milliseconds 500
+    }
+}
+$srvProc = Start-Process -FilePath $pyw -ArgumentList "`"$server`"", $Port -WorkingDirectory $root -WindowStyle Hidden -PassThru
 
 if (-not $SkipStartup) {
     $lnk = Join-Path ([Environment]::GetFolderPath('Startup')) 'OBS Remote.lnk'
@@ -143,15 +277,40 @@ if (-not $SkipStartup) {
     $s.Description = 'OBS Remote web server for phones'
     $s.Save()
 }
+# Ask the page directly, never through a proxy (a system proxy can swallow requests even to 127.0.0.1).
+function Test-Page {
+    try {
+        $rq = [Net.HttpWebRequest]::Create("http://127.0.0.1:$Port/"); $rq.Proxy = $null; $rq.Timeout = 3000
+        $rs = $rq.GetResponse(); $ok = [int]$rs.StatusCode -eq 200; $rs.Close()
+        $script:pageErr = $null; return $ok
+    } catch { $script:pageErr = $_.Exception.InnerException.Message; if (-not $script:pageErr) { $script:pageErr = $_.Exception.Message }; return $false }
+}
 $running = $false
-foreach ($i in 1..10) {
+foreach ($i in 1..20) {
     Start-Sleep -Milliseconds 500
-    try { $running = (Invoke-WebRequest "http://127.0.0.1:$Port/" -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200 } catch {}
-    if ($running) { break }
+    $running = Test-Page
+    if ($running -or $srvProc.HasExited) { break }
 }
 if (-not $running) {
     Step 4 'OBS Remote server' FAIL "didn't start"
-    Hint "To see why, run:  `"$py`" `"$server`""
+    $owner = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) | Select-Object -First 1 |
+        ForEach-Object { Get-CimInstance Win32_Process -Filter "ProcessId = $($_.OwningProcess)" -ErrorAction SilentlyContinue }
+    if ($owner -and $owner.ProcessId -eq $srvProc.Id) {
+        # it's running and holds the port, but doesn't answer
+        Hint "It's running but didn't answer on http://127.0.0.1:$Port/ ($script:pageErr)."
+        Hint 'Security software may be blocking it. Try opening that address in a browser on this PC.'
+    } elseif ($owner) {
+        Hint "Port $Port is taken by $($owner.Name) ($($owner.ExecutablePath))."
+        Hint "Close that program, or run Install.bat -Port 8766."
+    } else {
+        # it stopped by itself: pythonw has nowhere to print, so run it once more with python and show what it says
+        $log = Join-Path $env:TEMP 'obs-remote-start.txt'
+        $t = Start-Process $py -ArgumentList "`"$server`"", $Port -WorkingDirectory $root -WindowStyle Hidden -PassThru `
+            -RedirectStandardError $log -RedirectStandardOutput "$log.out"
+        if (-not $t.WaitForExit(15000)) { Stop-Process -Id $t.Id -Force -ErrorAction SilentlyContinue }
+        $why = @(Get-Content $log -ErrorAction SilentlyContinue | Where-Object { $_.Trim() }) | Select-Object -Last 3
+        if ($why) { $why | ForEach-Object { Hint $_ } } else { Hint "To see why, run:  `"$py`" `"$server`"" }
+    }
     exit 1
 }
 $ver = (Get-Content (Join-Path $root 'VERSION') -ErrorAction SilentlyContinue | Select-Object -First 1)
@@ -170,6 +329,12 @@ $lan = @(@(foreach ($ip in Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Sil
     [pscustomobject]@{ Alias = $ip.InterfaceAlias; IP = $ip.IPAddress; Metric = [int]$metric }
 }) | Sort-Object Metric)
 $url = { param($h) "http://${h}:$Port/" }
+# The login rides in the #fragment, which browsers never send to the server. The page saves it and removes it
+# from the address bar (www/index.html, "sign-in link"). Re-run Install.bat after changing OBS's password.
+$login = @()
+if ($obsPw) { $login += 'pw=' + [uri]::EscapeDataString($obsPw) }
+if ($obsPort -ne 4455) { $login += "port=$obsPort" }
+$signIn = { param($h) (& $url $h) + $(if ($login.Count) { '#' + ($login -join '&') } else { '' }) }
 
 # QR code in the console: qr.py gives rows of 0/1, two rows per text line using half blocks,
 # black on white so every phone camera reads it.
@@ -191,27 +356,29 @@ function Show-QR($text) {
 
 $page = @()   # label|url pairs for Phone address.html
 Say
-Rule
-Say '   ALL DONE!  Now on each phone:' Green
-Rule
+Say '  ALL DONE!' Green
 if ($lan.Count -eq 0) {
     Say '   This PC has no local network connection right now, so phones can''t reach it yet.' Yellow
     Say '   Connect it to the network, then run Install.bat again.' Yellow
 } else {
     $main = & $url $lan[0].IP
-    Say "   1. Connect the phone to the same Wi-Fi network as this PC."
-    Say "   2. Point the phone's camera at this code and tap the link:"
+    Say "  On each phone, on the same Wi-Fi as this PC, scan this code. It opens OBS Remote signed in:"
     Say
-    Show-QR $main
-    Say
+    Show-QR (& $signIn $lan[0].IP)
     Say "        $main" White
     foreach ($n in $lan | Select-Object -Skip 1) { Say "        also: $(& $url $n.IP)   ($($n.Alias))" DarkGray }
-    Say
-    Say "   3. Enter the OBS WebSocket password."
-    Say "      It's in OBS: Tools > WebSocket Server Settings > Show Connect Info." DarkGray
-    Say "   4. Add it to the home screen, so it opens like an app."
-    Say "      iPhone: Share > Add to Home Screen.   Android: menu > Add to Home screen." DarkGray
-    foreach ($n in $lan) { $page += "On this network ($($n.Alias))|$(& $url $n.IP)" }
+    Say "  Then add it to the home screen. iPhone: Share > Add to Home Screen. Android: menu > Add to Home screen." DarkGray
+    foreach ($n in $lan) { $page += "On this network ($($n.Alias))|$(& $url $n.IP)|$(& $signIn $n.IP)" }
+    if ($useTs) {
+        # "?" = folded away on the page until asked for: it only works on phones signed in to the same tailnet
+        $page += "?Over Tailscale|$(& $url $tsIP)|$(& $signIn $tsIP)"
+        Say
+        if ((Read-Host '  Show the Tailscale code too, for phones away from this Wi-Fi? (y/N)') -match '^[yY]') {
+            Say '  Over Tailscale (the phone needs the Tailscale app, signed in to the same account):'
+            Show-QR (& $signIn $tsIP)
+            Say "        $(& $url $tsIP)" White
+        }
+    }
 }
 
 # Save the addresses: a text file, and a page with big QR codes to open any time.
@@ -219,8 +386,7 @@ $page | ForEach-Object { $_.Split('|')[1] } | Set-Content (Join-Path $root 'Phon
 if ($page.Count) { & $py "$PSScriptRoot\qr.py" --html (Join-Path $root 'Phone address.html') @page 2>$null }
 
 Say
-Rule
-Say "   To see this code again, open 'Phone address.html' next to Install.bat."
-Say "   Tip: give this PC a fixed IP address in your router, so the code never changes." DarkGray
-Say
+Say ("  'Phone address.html' shows the code" + $(if ($useTs) { 's' }) + " again." +
+     $(if ($obsPw) { ' It contains the OBS password: only show it to people who may control OBS.' }))
+Say '  Tip: give this PC a fixed IP address in your router, so the code never changes.' DarkGray
 exit 0

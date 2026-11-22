@@ -188,6 +188,13 @@ details.grp summary>div{display:flex;flex-direction:column;gap:2px;min-width:0}
 .gi svg{width:19px;height:19px}
 .sub{font-size:12px;color:var(--dim);font-weight:600;margin:14px 0 8px;display:flex;justify-content:space-between}
 .note{font-size:12px;color:var(--dim);margin:8px 0 4px}
+/* shown while OBS is closed or not answering (Start OBS: server.py /api/obs/start) */
+.down{display:flex;align-items:center;gap:12px;margin:10px 0 0;padding:12px;border-radius:12px;background:#2a1d0c;border:1px solid #9e6a03}
+.down[hidden]{display:none}
+.down span{flex:1;display:flex;flex-direction:column;gap:2px}
+.down small{font-size:12px;color:var(--dim)}
+.down button{flex:none;background:var(--green);border-color:var(--green);color:#fff;font-weight:700;padding:10px 14px}
+.down button[hidden]{display:none}
 /* picture quality: three tiles */
 .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .seg.two{grid-template-columns:1fr 1fr;margin-bottom:12px}
@@ -244,6 +251,7 @@ details.grp .grpb>.field:first-child,details.grp .grpb>div:first-child{margin-to
 </div></header>
 
 <main class="wrap">
+  <div class="down" id="obsDown" hidden><span><b id="downT"></b><small id="downS"></small></span><button id="btnStartObs" hidden>Start OBS</button></div>
   <!-- LIVE -->
   <div class="tab sel" id="tabLive">
     <div class="stick"><div class="monitors" id="monitors">
@@ -350,13 +358,16 @@ class OBS{
     return new Promise((resolve,reject)=>{
       let ws;try{ws=new WebSocket(url,"obswebsocket.json")}catch(e){return reject(e)}
       this.ws=ws;let settled=false;
+      // With OBS closed, Windows Firewall often drops the attempt silently instead of refusing it, so the browser
+      // would wait ~20 s. Give up after 6 s (the retry loop tries again).
+      const giveUp=setTimeout(()=>{if(!settled&&this.ws===ws)try{ws.close()}catch{}},6000);
       ws.onmessage=ev=>{
         const m=JSON.parse(ev.data);
         if(m.op===0){ // Hello
           const d={rpcVersion:1,eventSubscriptions:this.subs};
           if(m.d.authentication){const{salt,challenge}=m.d.authentication;d.authentication=sha64(sha64(password+salt)+challenge)}
           ws.send(JSON.stringify({op:1,d}));
-        }else if(m.op===2){this.ready=true;settled=true;resolve();this.emit("open")}
+        }else if(m.op===2){clearTimeout(giveUp);this.ready=true;settled=true;resolve();this.emit("open")}
         else if(m.op===5){this.emit(m.d.eventType,m.d.eventData||{});this.emit("*",m.d)}
         else if(m.op===7){const p=this.pending.get(m.d.requestId);if(!p)return;this.pending.delete(m.d.requestId);
           const st=m.d.requestStatus;st.result?p.res(m.d.responseData||{}):p.rej(Object.assign(new Error(st.comment||("OBS error "+st.code)),{code:st.code}))}
@@ -412,6 +423,12 @@ const S={scenes:[],program:"",preview:"",studio:false,stream:{},rec:{},audio:[],
   speed:store.get("speed2",1),hidden:new Set(store.get("hidden",[])),
   showAudio:store.get("showAudio",true),listen:store.get("listen",false),ctrl:store.get("ctrl","buttons"),quality:store.get("quality","balanced"),tab:"tabLive"};
 const cfg={host:store.get("host",location.hostname||"localhost"),port:store.get("port",4455),pw:store.get("pw","")};
+// Sign-in link: the installer's QR code opens http://PC:8765/#pw=...(&port=...). The #fragment never reaches the
+// server. Save it like a typed-in login, then take it out of the address bar (and the home-screen icon's address).
+(()=>{const h=new URLSearchParams(location.hash.slice(1));if(!h.has("pw")&&!h.has("port"))return;
+  cfg.host=location.hostname||cfg.host;cfg.pw=h.get("pw")||"";cfg.port=+h.get("port")||4455;
+  store.set("host",cfg.host);store.set("port",cfg.port);store.set("pw",cfg.pw);
+  history.replaceState(null,"",location.pathname+location.search)})();
 
 /* ---------- connection ---------- */
 let retry=0,retryT;
@@ -420,13 +437,34 @@ async function connect(){
   clearTimeout(retryT);setConn("wait","Connecting…");
   try{
     await obs.connect(`ws://${cfg.host}:${cfg.port}`,cfg.pw);
-    retry=0;setConn("ok","OBS");await loadAll();
+    retry=0;setConn("ok","OBS");showDown(null);await loadAll();
   }catch(e){
-    setConn("err","Offline");
+    setConn("err","Offline");checkObsDown();
     if(/password/i.test(e.message)){toast(e.message,true);openSettings(true);return}
     retryT=setTimeout(connect,Math.min(1000*2**retry++,10000))}
 }
-obs.on("close",()=>{setConn("err","Reconnecting…");retryT=setTimeout(connect,1000)});
+obs.on("close",()=>{setConn("err","Reconnecting…");retryT=setTimeout(connect,1000);setTimeout(checkObsDown,800)});
+// Don't wait for a slow failed connection to find out OBS is down: ask the app's server every 3 s meanwhile.
+setInterval(()=>{if(!obs.ready&&!document.hidden&&cfg.pw!==undefined)checkObsDown()},3000);
+// OBS closed or crashed: the app's server on the OBS PC can say so, and start it again (Start OBS).
+function showDown(st){const box=$("obsDown");
+  if(!st||obs.ready){box.hidden=true;return}
+  box.hidden=false;
+  if(st.starting){$("downT").textContent="Starting OBS…";$("downS").textContent="It connects by itself once OBS is up.";$("btnStartObs").hidden=true;return}
+  if(st.running===false){$("downT").textContent="OBS is closed on the PC";$("downS").textContent=st.canStart?"Not running, or it crashed.":"Not running, and OBS Remote can't find it to start it.";$("btnStartObs").hidden=!st.canStart}
+  else{$("downT").textContent="OBS isn't answering";$("downS").textContent="It's open, but its WebSocket server isn't on. In OBS: Tools > WebSocket Server Settings.";$("btnStartObs").hidden=true}}
+let startingUntil=0;
+async function checkObsDown(){
+  if(obs.ready)return showDown(null);
+  if(Date.now()<startingUntil)return showDown({starting:true});
+  try{const r=await fetch("/api/obs",{cache:"no-store"});if(!r.ok)throw 0;const st=await r.json();if(st.running===null)throw 0;showDown(st)}
+  catch{showDown(null)}}  // an older server or not on the OBS PC: say nothing extra
+$("btnStartObs").onclick=async()=>{buzz();
+  try{const r=await fetch("/api/obs/start",{method:"POST",headers:{"X-OBS-Remote":"1","X-OBS-Remote-Key":sha64("obs-remote-listen:"+cfg.pw)}});
+    const j=await r.json().catch(()=>({}));if(!r.ok&&r.status!==409)throw new Error(j.error||`The OBS PC said ${r.status}`);
+    startingUntil=Date.now()+45000;showDown({starting:true});toast("Starting OBS…");
+    clearTimeout(retryT);retry=0;retryT=setTimeout(connect,4000)}
+  catch(e){toast(e.message,true)}};
 
 async function loadAll(){
   await Promise.all([loadScenes(),loadOutputs(),loadAudio(),loadDevices(),loadTransitions(),loadAss()]).catch(fail);
