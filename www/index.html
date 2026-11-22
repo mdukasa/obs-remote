@@ -421,7 +421,7 @@ const S={scenes:[],program:"",preview:"",studio:false,stream:{},rec:{},audio:[],
   // Speed = share of each camera's max speed in its obs-ptz filter. 100% moves exactly like obs-ptz's own dock
   // (which asks for full speed and lets obs-ptz cap it at the max). New key: the old one defaulted to 50%.
   speed:store.get("speed2",1),hidden:new Set(store.get("hidden",[])),
-  showAudio:store.get("showAudio",true),listen:store.get("listen",false),ctrl:store.get("ctrl","buttons"),quality:store.get("quality","balanced"),tab:"tabLive"};
+  showAudio:store.get("showAudio",true),ctrl:store.get("ctrl","buttons"),quality:store.get("quality","balanced"),tab:"tabLive"};
 const cfg={host:store.get("host",location.hostname||"localhost"),port:store.get("port",4455),pw:store.get("pw","")};
 // Sign-in link: the installer's QR code opens http://PC:8765/#pw=...(&port=...). The #fragment never reaches the
 // server. Save it like a typed-in login, then take it out of the address bar (and the home-screen icon's address).
@@ -610,7 +610,7 @@ function renderAudio(){
   const bar=`<div class="mbar"><i class="cv"></i><i class="hd"></i></div>`;
   $("audio").innerHTML=list.length?list.map(a=>`<div class="arow"><div class="ainfo"><div class="atop"><span class="n">${esc(a.name)}</span><span class="db">−∞ dB</span></div>
       <div class="meter${a.muted?" muted":""}" data-meter="${esc(a.name)}">${bar}${bar}</div></div>
-      ${S.listen?`<button class="amon${monOn(a)?" on":""}" data-mon="${esc(a.name)}" aria-label="Monitor ${esc(a.name)}">${ICON.headphones}</button>`:""}
+      <button class="amon${monOn(a)?" on":""}" data-mon="${esc(a.name)}" aria-label="Monitor ${esc(a.name)}">${ICON.headphones}</button>
       <button class="${a.muted?"muted":""}" data-mute="${esc(a.name)}">${a.muted?"🔇 Muted":"🔊 On"}</button></div>`).join("")
     :`<div class="empty">No audio sources in the live scene.</div>`;
   renderListen();
@@ -1003,7 +1003,8 @@ function savePreset(id){
 /* ---------- listen on the phone ---------- */
 // The server on the OBS PC records OBS's audio monitoring device (Settings → Audio → Advanced) and streams it as
 // raw 24 kHz mono 16-bit PCM (listen.py). Only sources set to monitor in OBS are heard: the headphone button on
-// each audio row switches a source between "Monitor Off" and "Monitor and Output". Off unless turned on in Settings.
+// each audio row switches a source between "Monitor Off" and "Monitor and Output".
+// Nothing plays, and the server records nothing, until someone taps Listen.
 const monOn=a=>a.mon==="OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT"||a.mon==="OBS_MONITORING_TYPE_MONITOR_ONLY";
 function toggleMonitor(name){const a=S.audio.find(x=>x.name===name);if(!a)return;
   obs.call("SetInputAudioMonitorType",{inputName:name,monitorType:monOn(a)?"OBS_MONITORING_TYPE_NONE":"OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT"}).catch(fail)}
@@ -1035,7 +1036,7 @@ const player={ctx:null,ctrl:null,next:0,on:false,
     if(this.next<now+0.03||this.next>now+0.6)this.next=now+0.15;
     src.start(this.next);this.next+=n/LISTEN_RATE},
   stop(){this.on=false;const c=this.ctrl;this.ctrl=null;try{c&&c.abort()}catch{}renderListen()}};
-function renderListen(){const b=$("btnListen");b.hidden=!S.listen;if(!S.listen&&player.on)player.stop();
+function renderListen(){const b=$("btnListen");b.hidden=false;
   b.classList.toggle("on",player.on);b.innerHTML=`${ICON.headphones}${player.on?"Stop":"Listen"}`}
 $("btnListen").onclick=()=>{buzz();player.on?player.stop():player.start()};
 addEventListener("pagehide",()=>player.stop());
@@ -1087,7 +1088,6 @@ function openSettings(force){
     ${obs.ready?tog("sStudio",S.studio,ICON.studio,"Studio Mode","Preview a scene first, then TAKE it to program. Changes OBS itself, for everyone"):""}
     ${S.ass!==null?tog("sShowAss",S.showAss,ICON.shuffle,"Auto scene switching","Show the Advanced Scene Switcher switch"):""}
     ${tog("sShowAudio",S.showAudio,ICON.speaker,"Audio","Show the audio section: mute buttons and sound meters")}
-    ${tog("sListen",S.listen,ICON.headphones,"Listen on this phone",'Adds Listen and a headphone button per source. You hear sources set to monitor in OBS, about 0.2 s late. They also play on the OBS PC\'s monitoring device<span id="sMonDev"></span>.')}
     ${S.scenes.length?`<div class="sub">Scenes on the phone <span id="sShown">${shown} of ${S.scenes.length}</span></div><div class="scns">${hideRows}</div>`:""}`)}
     ${S.devices.length?grp(ICON.camera,"Cameras",`${S.devices.length} PTZ camera${S.devices.length>1?"s":""} · ${S.ctrl==="joystick"?"joystick":"buttons"}`,false,`
     <div class="sub">Controls</div>
@@ -1101,7 +1101,6 @@ function openSettings(force){
       ${(S.videoInputs||[]).map(n=>`<option value="${esc(n)}"${cur===n?" selected":""}>${esc(n)}</option>`).join("")}</select></div></div>`}).join("")}`):""}
     <div class="btns${force?" one":""}">${force?"":"<button data-close>Close</button>"}<button class="primary" id="sSave">Save &amp; connect</button></div>`,
     close=>{renderUpd();checkUpdate();loadAutofix();
-      fetch("/api/listen-state",{cache:"no-store"}).then(r=>r.json()).then(st=>{if(st.device&&$("sMonDev"))$("sMonDev").textContent=` (${st.device})`}).catch(()=>{});
       document.querySelectorAll("[data-hide]").forEach(c=>c.onchange=()=>{const a=document.querySelectorAll("[data-hide]");
         $("sShown").textContent=`${[...a].filter(x=>x.checked).length} of ${a.length}`});
       $("sSave").onclick=async()=>{
@@ -1113,8 +1112,7 @@ function openSettings(force){
       if($("sShowAss")){S.showAss=$("sShowAss").checked;store.set("showAss",S.showAss);renderAss()}
       document.querySelectorAll("[data-hide]").forEach(c=>c.checked?S.hidden.delete(c.dataset.hide):S.hidden.add(c.dataset.hide));
       store.set("hidden",[...S.hidden]);renderScenes();
-      S.showAudio=$("sShowAudio").checked;store.set("showAudio",S.showAudio);
-      S.listen=$("sListen").checked;store.set("listen",S.listen);renderAudio();
+      S.showAudio=$("sShowAudio").checked;store.set("showAudio",S.showAudio);renderAudio();
       const ctl=document.querySelector("input[name=sCtrl]:checked");if(ctl){S.ctrl=ctl.value;store.set("ctrl",S.ctrl);applyCtrl()}
       if(S.devices.length&&obs.ready){
         const c={names:{...(S.camCfg?.names||{})},pictures:{...(S.camCfg?.pictures||{})}};

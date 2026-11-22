@@ -43,7 +43,7 @@ It starts OBS from its own folder and refuses (409) if OBS is already running.
 OBS opens on the desktop of whoever is signed in, because the server runs in that session.
 
 ## Listen on the phone (`listen.py`)
-Off unless *Settings → Live tab → Listen on this phone* is on, which is saved per phone.
+The Audio section always has a **Listen** button, and each source a headphone button. Nothing plays, and the server records nothing, until someone taps **Listen**.
 obs-websocket can't send sound, so the server on the OBS PC records it instead:
 - **What you hear:** OBS's audio monitoring device (OBS *Settings → Audio → Advanced → Monitoring Device*), read with `GetProfileParameter`.
   Only sources set to *Monitor Only* or *Monitor and Output* play there.
