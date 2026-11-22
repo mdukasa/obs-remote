@@ -3,3 +3,9 @@ __pycache__/
 Phone address.txt
 Phone address.html
 autofix.log
+
+# made by docs/screenshots (pictures.py, make.py)
+docs/screenshots/demo-data.js
+docs/screenshots/demo.html
+docs/screenshots/frame.html
+docs/screenshots/terminal.html

@@ -118,3 +118,10 @@ To test one on a single PC, run `py server.py update v1.3.0-beta1`.
 - `python server.py update [tag]` does the same from the command line and exits. Run `Install.bat` afterwards to restart the server.
 - The page checks `/api/version` when it loads, when Settings opens and every 6 hours. When the server reports an update, it shows a dot on ⚙.
 - Before 1.2.0, copies followed the `VERSION` file on `main` instead. A 1.1.x copy therefore moves to 1.2.0 when `main` says 1.2.0, and follows releases from then on.
+
+## README screenshots (`docs/screenshots`)
+The pictures in `docs/img` are made, not photographed, so they show no real venue or people.
+- `pictures.py` draws one made-up hall (stage, lectern, screen, audience) with Pillow and crops it into camera views and preset thumbnails, like a PTZ camera would frame them. It writes `demo-data.js`.
+- `fake-obs.js` replaces `WebSocket` with a pretend OBS that answers the app's obs-websocket requests (scenes, two obs-ptz cameras, presets, audio meters, a live stream) from that data.
+- `make.py` loads the real `www/index.html` with the fake OBS into a 390 px frame and screenshots it with headless Microsoft Edge (`live.png`, `camera.png`). `installer.png` is `terminal.html`, a copy of `setup/install.ps1`'s output with a real QR code from `setup/qr.py`.
+- After a UI change: `python pictures.py` (once), then `python make.py`. The generated HTML/JS files are git-ignored.
