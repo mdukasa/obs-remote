@@ -1,7 +1,8 @@
 """OBS Remote: a tiny web server for the phone control page.
 
-The page talks straight to obs-websocket (normally port 4455) on this PC, so this
-server only hands out the files in www/. Python standard library only.
+The page talks straight to obs-websocket (normally port 4455) on this PC. This server hands out the
+files in www/, installs updates, runs the frozen-camera watcher (autofix.py) and, for phones that turn
+on Listen, streams OBS's monitoring device (listen.py). Python standard library only.
 
     python server.py            # serves on port 8765
     python server.py 9000       # another port
@@ -13,6 +14,7 @@ import http.server
 import io
 import json
 import os
+import queue
 import shutil
 import socket
 import subprocess
@@ -24,6 +26,7 @@ import urllib.request
 import zipfile
 
 import autofix
+import listen
 
 UPDATE_ONLY = len(sys.argv) > 1 and sys.argv[1].lower() == "update"
 UPDATE_TAG = sys.argv[2] if UPDATE_ONLY and len(sys.argv) > 2 else None
@@ -206,7 +209,44 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.split("?")[0] == "/api/mixer-hidden":
             q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send_json(200, {"hidden": mixer_hidden((q.get("collection") or [""])[0])})
+        if self.path.split("?")[0] == "/api/listen-state":
+            dev = listen.STATE["device"]
+            if not dev and os.name == "nt":
+                try:
+                    dev = listen.STATE["device"] = listen.monitoring_device()[1]
+                except Exception:
+                    pass
+            return self.send_json(200, {"device": dev, "error": listen.STATE["error"],
+                                        "listeners": len(listen.LISTENERS), "supported": os.name == "nt"})
+        if self.path.split("?")[0] == "/api/listen":
+            return self.listen()
         return super().do_GET()
+
+    def listen(self):
+        """Stream OBS's monitoring device as raw 24 kHz mono s16le until the phone stops (see listen.py)."""
+        if os.name != "nt":
+            return self.send_json(501, {"error": "Listening needs Windows"})
+        if not listen.key_ok(self.headers.get("X-OBS-Remote-Key")):
+            return self.send_json(403, {"error": "Wrong OBS websocket password"})
+        q = listen.subscribe()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.end_headers()
+            self.close_connection = True
+            while True:
+                try:
+                    pcm = q.get(timeout=5)
+                except queue.Empty:
+                    break
+                if pcm is None:  # capture failed; the phone reads why from /api/listen-state
+                    break
+                self.wfile.write(pcm)
+                self.wfile.flush()
+        except OSError:  # the phone went away
+            pass
+        finally:
+            listen.unsubscribe(q)
 
     def do_POST(self):
         # The custom header can't be sent cross-site without a CORS preflight, which this server never allows,

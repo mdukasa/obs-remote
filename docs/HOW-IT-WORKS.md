@@ -25,6 +25,23 @@ The count then stays one too low. Once it's low enough, OBS stops sending levels
 Before 1.6.2 the page re-identified on every tab switch and every time it was hidden, so busy installs hit this after a few days.
 Inputs are listed when their type can have audio. Browser sources are only listed when *Control audio via OBS* (`reroute_audio`) is ticked, as in OBS's own mixer.
 
+## Listen on the phone (`listen.py`)
+Off unless *Settings → Live tab → Listen on this phone* is on, which is saved per phone.
+obs-websocket can't send sound, so the server on the OBS PC records it instead:
+- **What you hear:** OBS's audio monitoring device (OBS *Settings → Audio → Advanced → Monitoring Device*), read with `GetProfileParameter`.
+  Only sources set to *Monitor Only* or *Monitor and Output* play there.
+  The headphone button on each audio row switches a source between *Monitor Off* and *Monitor and Output* (`SetInputAudioMonitorType`), for everyone.
+  Monitored sources also play out of that device on the OBS PC. If it's the hall's speakers, pick a spare output in OBS first.
+  Anything else Windows plays on that device is heard too.
+- **Recording:** WASAPI loopback of that device through `ctypes` (no installs), then mixed to mono and resampled to 24 kHz 16-bit: 48 KB/s per phone.
+  It only runs while at least one phone listens. While nothing plays, loopback delivers nothing, so the server sends silence to keep phones' timing steady.
+- **Stream:** `GET /api/listen` sends raw PCM over a plain HTTP response until the phone stops.
+  It needs the header `X-OBS-Remote-Key` = base64(SHA-256(`obs-remote-listen:` + OBS websocket password)), checked against OBS's own websocket config, so the password never crosses the network.
+  `GET /api/listen-state` reports the device name and the last error.
+- **Phone:** Web Audio (works on plain `http://`) schedules each 40 ms piece about 150 ms ahead and skips ahead if the delay grows past 600 ms.
+  On iPhone, `navigator.audioSession.type = "playback"` lets it play with the silent switch on (iOS 17+).
+- Don't listen on the OBS PC itself when the monitoring device is its default output: the page would record its own playback.
+
 ## PTZ (obs-ptz websocket vendor API)
 Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz_preset_get_list`, `ptz_preset_recall`,
 `ptz_preset_save`, `ptz_preset_capture_thumbnail`, `ptz_preset_get_thumbnail`, `ptz_request_state`. Events used: `ptz_state_changed`, `ptz_preset_*`.

@@ -106,6 +106,15 @@ h2 button{font-size:12px;padding:4px 8px;text-transform:none;letter-spacing:0}
 .meter.idle .mbar{opacity:.35}
 .arow button{min-width:88px;padding:9px}
 .arow button.muted{background:#3b1416;border-color:var(--red);color:#ffb3b5}
+/* listen on the phone (Settings → Live tab → Listen) */
+.arow button.amon{min-width:0;width:44px;height:40px;flex:none;padding:0;display:flex;align-items:center;justify-content:center;color:var(--dim)}
+.arow button.amon svg{display:block;flex:none;width:20px;height:20px}
+.arow button.amon.on{background:#10273f;border-color:#2f81f7;color:#9ecbff}
+h2 .hbtns{display:flex;gap:6px}
+#btnListen{display:flex;align-items:center;gap:5px}
+#btnListen[hidden]{display:none}
+#btnListen svg{width:14px;height:14px}
+#btnListen.on{background:#2f81f7;border-color:#2f81f7;color:#fff}
 /* camera tab */
 .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
 .chip{flex:none;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:999px;font-weight:600}
@@ -258,7 +267,7 @@ details.grp .grpb>.field:first-child,details.grp .grpb>div:first-child{margin-to
       <button id="btnAss" role="switch" aria-checked="false" aria-label="Auto scene switching"><span></span></button>
     </div>
     <div class="stats" id="stats"></div>
-    <h2 id="audioHead">Audio <button id="btnAllAudio">Show all</button></h2>
+    <h2 id="audioHead">Audio <span class="hbtns"><button id="btnListen" hidden></button><button id="btnAllAudio">Show all</button></span></h2>
     <div class="audio" id="audio"></div>
   </div>
 
@@ -401,7 +410,7 @@ const S={scenes:[],program:"",preview:"",studio:false,stream:{},rec:{},audio:[],
   // Speed = share of each camera's max speed in its obs-ptz filter. 100% moves exactly like obs-ptz's own dock
   // (which asks for full speed and lets obs-ptz cap it at the max). New key: the old one defaulted to 50%.
   speed:store.get("speed2",1),hidden:new Set(store.get("hidden",[])),
-  showAudio:store.get("showAudio",true),ctrl:store.get("ctrl","buttons"),quality:store.get("quality","balanced"),tab:"tabLive"};
+  showAudio:store.get("showAudio",true),listen:store.get("listen",false),ctrl:store.get("ctrl","buttons"),quality:store.get("quality","balanced"),tab:"tabLive"};
 const cfg={host:store.get("host",location.hostname||"localhost"),port:store.get("port",4455),pw:store.get("pw","")};
 
 /* ---------- connection ---------- */
@@ -538,8 +547,10 @@ async function loadAudio(){
   const keep=await Promise.all(cand.map(i=>i.unversionedInputKind!=="browser_source"?true
     :obs.call("GetInputSettings",{inputName:i.inputName}).then(r=>r.inputSettings?.reroute_audio===true).catch(()=>false)));
   const aud=cand.filter((_,k)=>keep[k]);
-  const mutes=await Promise.all(aud.map(i=>obs.call("GetInputMute",{inputName:i.inputName}).then(r=>r.inputMuted).catch(()=>null)));
-  S.audio=aud.map((i,k)=>({name:i.inputName,muted:mutes[k],special:sp.has(i.inputName)})).filter(a=>a.muted!==null);
+  const [mutes,mons]=await Promise.all([
+    Promise.all(aud.map(i=>obs.call("GetInputMute",{inputName:i.inputName}).then(r=>r.inputMuted).catch(()=>null))),
+    Promise.all(aud.map(i=>obs.call("GetInputAudioMonitorType",{inputName:i.inputName}).then(r=>r.monitorType).catch(()=>"")))]);
+  S.audio=aud.map((i,k)=>({name:i.inputName,muted:mutes[k],mon:mons[k],special:sp.has(i.inputName)})).filter(a=>a.muted!==null);
   await loadMixerHidden();
   renderAudio();
 }
@@ -560,11 +571,14 @@ function renderAudio(){
   const bar=`<div class="mbar"><i class="cv"></i><i class="hd"></i></div>`;
   $("audio").innerHTML=list.length?list.map(a=>`<div class="arow"><div class="ainfo"><div class="atop"><span class="n">${esc(a.name)}</span><span class="db">−∞ dB</span></div>
       <div class="meter${a.muted?" muted":""}" data-meter="${esc(a.name)}">${bar}${bar}</div></div>
+      ${S.listen?`<button class="amon${monOn(a)?" on":""}" data-mon="${esc(a.name)}" aria-label="Monitor ${esc(a.name)}">${ICON.headphones}</button>`:""}
       <button class="${a.muted?"muted":""}" data-mute="${esc(a.name)}">${a.muted?"🔇 Muted":"🔊 On"}</button></div>`).join("")
     :`<div class="empty">No audio sources in the live scene.</div>`;
+  renderListen();
 }
 $("btnAllAudio").onclick=()=>{S.showAllAudio=!S.showAllAudio;renderAudio()};
-$("audio").addEventListener("click",e=>{const b=e.target.closest("[data-mute]");if(!b)return;buzz();obs.call("ToggleInputMute",{inputName:b.dataset.mute}).catch(fail)});
+$("audio").addEventListener("click",e=>{const m=e.target.closest("[data-mon]");if(m){buzz();toggleMonitor(m.dataset.mon);return}
+  const b=e.target.closest("[data-mute]");if(!b)return;buzz();obs.call("ToggleInputMute",{inputName:b.dataset.mute}).catch(fail)});
 // volume meters: OBS sends InputVolumeMeters ~20x/s ([magnitude, peak, inputPeak] per channel, linear).
 // Always subscribed (see OBS.subs); about 9 KB/s, ignored while the Live tab isn't on screen.
 const LV={};
@@ -588,6 +602,7 @@ let meterLast=performance.now();
       top=Math.max(top,s.hold)}
     m.previousElementSibling.lastChild.textContent=top>-60?`${top.toFixed(1)} dB`:"−∞ dB"}
   requestAnimationFrame(meterLoop)})(performance.now());
+obs.on("InputAudioMonitorTypeChanged",d=>{const a=S.audio.find(x=>x.name===d.inputName);if(a){a.mon=d.monitorType;renderAudio()}});
 obs.on("InputMuteStateChanged",d=>{const a=S.audio.find(x=>x.name===d.inputName);if(a){a.muted=d.inputMuted;renderAudio()}});
 ["InputCreated","InputRemoved","InputNameChanged"].forEach(ev=>obs.on(ev,()=>loadAudio().catch(()=>{})));
 // ticking/unticking "Control audio via OBS" in OBS updates the list straight away
@@ -942,6 +957,46 @@ function savePreset(id){
       toast("Preset saved");setTimeout(loadPresets,800)}catch(e){fail(e)}});
 }
 
+/* ---------- listen on the phone ---------- */
+// The server on the OBS PC records OBS's audio monitoring device (Settings → Audio → Advanced) and streams it as
+// raw 24 kHz mono 16-bit PCM (listen.py). Only sources set to monitor in OBS are heard: the headphone button on
+// each audio row switches a source between "Monitor Off" and "Monitor and Output". Off unless turned on in Settings.
+const monOn=a=>a.mon==="OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT"||a.mon==="OBS_MONITORING_TYPE_MONITOR_ONLY";
+function toggleMonitor(name){const a=S.audio.find(x=>x.name===name);if(!a)return;
+  obs.call("SetInputAudioMonitorType",{inputName:name,monitorType:monOn(a)?"OBS_MONITORING_TYPE_NONE":"OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT"}).catch(fail)}
+const LISTEN_RATE=24000;
+const player={ctx:null,ctrl:null,next:0,on:false,
+  async start(){
+    if(this.on)return;
+    try{if(navigator.audioSession)navigator.audioSession.type="playback"}catch{} // iPhone: play even with the silent switch on
+    this.ctx??=new (window.AudioContext||window.webkitAudioContext)();
+    this.ctx.resume();  // must happen inside the tap
+    this.on=true;this.next=0;renderListen();
+    const ctrl=this.ctrl=new AbortController();
+    try{
+      const r=await fetch("/api/listen",{headers:{"X-OBS-Remote-Key":sha64("obs-remote-listen:"+cfg.pw)},signal:ctrl.signal,cache:"no-store"});
+      if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||`The OBS PC said ${r.status}`);
+      const rd=r.body.getReader();let rest=null;
+      for(;;){const {value,done}=await rd.read();if(done)break;
+        let b=value;if(rest){const m=new Uint8Array(rest.length+b.length);m.set(rest);m.set(b,rest.length);b=m;rest=null}
+        if(b.length&1){rest=b.slice(-1);b=b.subarray(0,b.length-1)}
+        if(b.length)this.play(new Int16Array(b.slice().buffer))}
+      if(ctrl===this.ctrl){const st=await (await fetch("/api/listen-state",{cache:"no-store"})).json().catch(()=>({}));
+        throw new Error(st.error?`Can't record ${st.device||"the monitoring device"}: ${st.error}`:"Listening stopped")}
+    }catch(e){if(ctrl===this.ctrl&&e.name!=="AbortError")toast(e.message,true)}
+    finally{if(ctrl===this.ctrl)this.stop()}},
+  play(i16){const c=this.ctx,n=i16.length,buf=c.createBuffer(1,n,LISTEN_RATE),ch=buf.getChannelData(0);
+    for(let k=0;k<n;k++)ch[k]=i16[k]/32768;
+    const src=c.createBufferSource();src.buffer=buf;src.connect(c.destination);const now=c.currentTime;
+    // ~150 ms cushion against Wi-Fi hiccups; if it grows past 600 ms, skip ahead so the delay stays short
+    if(this.next<now+0.03||this.next>now+0.6)this.next=now+0.15;
+    src.start(this.next);this.next+=n/LISTEN_RATE},
+  stop(){this.on=false;const c=this.ctrl;this.ctrl=null;try{c&&c.abort()}catch{}renderListen()}};
+function renderListen(){const b=$("btnListen");b.hidden=!S.listen;if(!S.listen&&player.on)player.stop();
+  b.classList.toggle("on",player.on);b.innerHTML=`${ICON.headphones}${player.on?"Stop":"Listen"}`}
+$("btnListen").onclick=()=>{buzz();player.on?player.stop():player.start()};
+addEventListener("pagehide",()=>player.stop());
+
 /* ---------- tabs ---------- */
 document.querySelectorAll("nav [data-tab]").forEach(b=>b.onclick=()=>{
   stopMove();S.tab=b.dataset.tab;
@@ -965,6 +1020,7 @@ const ICON={
   studio:svgI('<rect x="2" y="6" width="9" height="7" rx="1.5"/><rect x="13" y="6" width="9" height="7" rx="1.5"/><path d="M5 17h14M15 15l2 2-2 2"/>'),
   shuffle:svgI('<path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>'),
   eye:svgI('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  headphones:svgI('<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z"/>'),
   eyeOff:svgI('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><path d="M3 3l18 18"/>'),
 };
 function openSettings(force){
@@ -988,6 +1044,7 @@ function openSettings(force){
     ${obs.ready?tog("sStudio",S.studio,ICON.studio,"Studio Mode","Preview a scene first, then TAKE it to program. Changes OBS itself, for everyone"):""}
     ${S.ass!==null?tog("sShowAss",S.showAss,ICON.shuffle,"Auto scene switching","Show the Advanced Scene Switcher switch"):""}
     ${tog("sShowAudio",S.showAudio,ICON.speaker,"Audio","Show the audio section: mute buttons and sound meters")}
+    ${tog("sListen",S.listen,ICON.headphones,"Listen on this phone",'Adds Listen and a headphone button per source. You hear sources set to monitor in OBS, about 0.2 s late. They also play on the OBS PC\'s monitoring device<span id="sMonDev"></span>.')}
     ${S.scenes.length?`<div class="sub">Scenes on the phone <span id="sShown">${shown} of ${S.scenes.length}</span></div><div class="scns">${hideRows}</div>`:""}`)}
     ${S.devices.length?grp(ICON.camera,"Cameras",`${S.devices.length} PTZ camera${S.devices.length>1?"s":""} · ${S.ctrl==="joystick"?"joystick":"buttons"}`,false,`
     <div class="sub">Controls</div>
@@ -1001,6 +1058,7 @@ function openSettings(force){
       ${(S.videoInputs||[]).map(n=>`<option value="${esc(n)}"${cur===n?" selected":""}>${esc(n)}</option>`).join("")}</select></div></div>`}).join("")}`):""}
     <div class="btns${force?" one":""}">${force?"":"<button data-close>Close</button>"}<button class="primary" id="sSave">Save &amp; connect</button></div>`,
     close=>{renderUpd();checkUpdate();loadAutofix();
+      fetch("/api/listen-state",{cache:"no-store"}).then(r=>r.json()).then(st=>{if(st.device&&$("sMonDev"))$("sMonDev").textContent=` (${st.device})`}).catch(()=>{});
       document.querySelectorAll("[data-hide]").forEach(c=>c.onchange=()=>{const a=document.querySelectorAll("[data-hide]");
         $("sShown").textContent=`${[...a].filter(x=>x.checked).length} of ${a.length}`});
       $("sSave").onclick=async()=>{
@@ -1012,7 +1070,8 @@ function openSettings(force){
       if($("sShowAss")){S.showAss=$("sShowAss").checked;store.set("showAss",S.showAss);renderAss()}
       document.querySelectorAll("[data-hide]").forEach(c=>c.checked?S.hidden.delete(c.dataset.hide):S.hidden.add(c.dataset.hide));
       store.set("hidden",[...S.hidden]);renderScenes();
-      S.showAudio=$("sShowAudio").checked;store.set("showAudio",S.showAudio);renderAudio();
+      S.showAudio=$("sShowAudio").checked;store.set("showAudio",S.showAudio);
+      S.listen=$("sListen").checked;store.set("listen",S.listen);renderAudio();
       const ctl=document.querySelector("input[name=sCtrl]:checked");if(ctl){S.ctrl=ctl.value;store.set("ctrl",S.ctrl);applyCtrl()}
       if(S.devices.length&&obs.ready){
         const c={names:{...(S.camCfg?.names||{})},pictures:{...(S.camCfg?.pictures||{})}};

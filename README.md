@@ -41,6 +41,7 @@ A dot on the ⚙ button means a new version is out. Open Settings and tap **Upda
 - **Speed:** at 100% the app moves as fast as obs-ptz's own controls. Lower it for finer moves.
 - **Presets:** tap to go there, hold to save the current position over it.
 - **↻ Refresh Camera:** reconnects a camera whose picture froze or whose control stopped answering, e.g. after a reboot.
+- **Listen (optional, off by default):** turn on *Settings → Live tab → Listen on this phone* to hear OBS's monitored sources on the phone, about 0.2 s late. The 🎧 button on each source turns OBS monitoring on or off for it. Monitored sources also play on OBS's monitoring device (OBS *Settings → Audio → Advanced*), so point that at a spare output if it's the hall's speakers.
 - **Settings (⚙):** connection and picture quality, Studio Mode, which scenes show, hide the audio section, camera names and which OBS source shows each camera.
 
 ## Frozen cameras fix themselves
