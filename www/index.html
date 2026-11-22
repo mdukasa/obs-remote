@@ -510,11 +510,17 @@ const cfg={host:store.get("host",location.hostname||"localhost"),port:store.get(
 /* ---------- connection ---------- */
 let retry=0,retryT;
 function setConn(state,label){$("connDot").className="dot "+(state==="ok"?"ok":state==="wait"?"wait":"");$("title").textContent=label}
+// Over Tailscale or the local network? The installer shares the PC's LAN address over Tailscale, so the same icon
+// works both ways; the server says which way this connection came in. Asked again on every (re)connect.
+S.via="";
+async function checkVia(){
+  try{S.via=(await (await fetch("/api/net",{cache:"no-store"})).json()).tailscale?"Tailscale":""}catch{S.via=""}
+  if(obs.ready)$("title").textContent=S.via?"OBS · via Tailscale":"OBS"}
 async function connect(){
   clearTimeout(retryT);setConn("wait","Connecting…");
   try{
     await obs.connect(`ws://${cfg.host}:${cfg.port}`,cfg.pw);
-    retry=0;setConn("ok","OBS");showDown(null);await loadAll();
+    retry=0;setConn("ok","OBS");showDown(null);checkVia();await loadAll();
   }catch(e){
     setConn("err","Offline");checkObsDown();
     if(/password/i.test(e.message)){toast(e.message,true);openSettings(true);return}
@@ -1230,7 +1236,7 @@ function openSettings(force){
   const tog=(id,on,icon,title,desc)=>`<label class="tog"><i class="gi">${icon}</i><span><b>${title}</b><small>${desc}</small></span><input type="checkbox" class="sw" id="${id}"${on?" checked":""}></label>`;
   const qual=[["smooth","Smooth","25 fps",ICON.film],["balanced","Balanced","10 fps",ICON.gauge],["saver","Data saver","2 fps",ICON.leaf]];
   sheet(`<h3>Settings</h3><div id="sUpd"></div>
-    ${grp(ICON.wifi,"Connection",`${obs.ready?`Connected to ${esc(cfg.host)}`:"Not connected"} · ${qName} picture`,force||!obs.ready,`
+    ${grp(ICON.wifi,"Connection",`${obs.ready?`Connected to ${esc(cfg.host)}${S.via?" via Tailscale":""}`:"Not connected"} · ${qName} picture`,force||!obs.ready,`
     <div class="field"><label>OBS PC address</label><input id="sHost" value="${esc(cfg.host)}" inputmode="url" autocapitalize="off"></div>
     <div class="field"><label>Websocket port</label><input id="sPort" value="${esc(cfg.port)}" inputmode="numeric"></div>
     <div class="field"><label>Websocket password (OBS → Tools → WebSocket Server Settings)</label><input id="sPw" type="password" value="${esc(cfg.pw)}" autocomplete="current-password"></div>

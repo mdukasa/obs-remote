@@ -326,7 +326,7 @@ $lan = @(@(foreach ($ip in Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Sil
     if ("$($ip.InterfaceAlias) $($ad.InterfaceDescription)" -match
         'vEthernet|Hyper-V|VirtualBox|VMware|WSL|Loopback|Bluetooth|Npcap|Docker|Tailscale|WiFiman|ZeroTier|Hamachi|WireGuard|OpenVPN|TAP-Windows|Wintun|NordLynx|ProtonVPN|Fortinet|AnyConnect|GlobalProtect') { continue }
     $metric = (Get-NetIPInterface -InterfaceIndex $ip.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).InterfaceMetric
-    [pscustomobject]@{ Alias = $ip.InterfaceAlias; IP = $ip.IPAddress; Metric = [int]$metric }
+    [pscustomobject]@{ Alias = $ip.InterfaceAlias; IP = $ip.IPAddress; Metric = [int]$metric; Dhcp = $ip.PrefixOrigin -eq 'Dhcp' }
 }) | Sort-Object Metric)
 $url = { param($h) "http://${h}:$Port/" }
 # The login rides in the #fragment, which browsers never send to the server. The page saves it and removes it
@@ -335,6 +335,65 @@ $login = @()
 if ($obsPw) { $login += 'pw=' + [uri]::EscapeDataString($obsPw) }
 if ($obsPort -ne 4455) { $login += "port=$obsPort" }
 $signIn = { param($h) (& $url $h) + $(if ($login.Count) { '#' + ($login -join '&') } else { '' }) }
+
+# ---- Tailscale route: the local address works over Tailscale too -----------------------------------
+# The PC advertises its own LAN address to the tailnet as a subnet route (a /32: just this PC, nothing else on the
+# network). A phone with Tailscale on then reaches the SAME http://LAN-IP:port/ from anywhere, so everyone uses one
+# QR code, one home-screen icon and one saved login, and Tailscale can be added to a phone later without redoing it.
+# Tailscale needs the route approved once in its admin console (automatic if the tailnet policy has autoApprovers);
+# setup opens that page and carries on by itself as soon as it's approved.
+$tsCli = "$env:ProgramFiles\Tailscale\tailscale.exe"
+$routeMark = Join-Path $PSScriptRoot 'tailscale-route.txt'   # the route setup added, so a new IP replaces it
+function Get-TsJson($what) { try { ((& $tsCli @what 2>$null) -join "`n") | ConvertFrom-Json } catch { $null } }
+function Test-TsApproved($route) {
+    $s = Get-TsJson @('status', '--json')
+    $s -and ((@($s.Self.PrimaryRoutes) -contains $route) -or (@($s.Self.AllowedIPs) -contains $route))
+}
+$oldRoute = if (Test-Path $routeMark) { "$(Get-Content $routeMark -TotalCount 1)".Trim() } else { '' }
+$tsRoute = $null; $routeOk = $false
+if ((Test-Path $tsCli) -and $lan.Count -and ($useTs -or $oldRoute)) {
+    $want = if ($useTs) { "$($lan[0].IP)/32" } else { '' }
+    $prefs = Get-TsJson @('debug', 'prefs')
+    if ($prefs) {
+        # "tailscale set --advertise-routes" replaces the whole list, so keep any routes someone else added
+        $cur = @($prefs.AdvertiseRoutes | Where-Object { $_ })
+        $new = @($cur | Where-Object { $_ -ne $oldRoute -and $_ -ne $want }) + @($want | Where-Object { $_ })
+        $same = (@($cur | Sort-Object) -join ',') -eq (@($new | Sort-Object) -join ',')
+        if (-not $same) { & $tsCli set "--advertise-routes=$($new -join ',')" 2>&1 | Out-Null }
+        if ($same -or $LASTEXITCODE -eq 0) {
+            if ($want) { Set-Content $routeMark $want -Encoding ASCII; $tsRoute = $want }
+            elseif (Test-Path $routeMark) { Remove-Item $routeMark; Step 0 'Tailscale route' INFO "removed ($oldRoute)" }
+        } else {
+            Step 0 'Tailscale route' WARN "Tailscale didn't accept the change"
+            Hint 'Run Install.bat as the Windows user who signed in to Tailscale on this PC.'
+        }
+    } else { Step 0 'Tailscale route' WARN "couldn't read Tailscale's settings"; Hint 'Is Tailscale running? Then run Install.bat again.' }
+}
+if ($tsRoute) {
+    $routeOk = Test-TsApproved $tsRoute
+    if ($routeOk) { Step 0 'Tailscale route' OK "the same address works over Tailscale ($tsRoute)" }
+    else {
+        $tsName = (Get-TsJson @('status', '--json')).Self.DNSName -replace '\..*$', ''
+        if (-not $tsName) { $tsName = $env:COMPUTERNAME.ToLower() }
+        Step 0 'Tailscale route' WARN 'needs approving once in Tailscale'
+        Hint "So the same code works over Tailscale, approve this PC's route. In the page that opens:"
+        Hint "sign in if asked, then on '$tsName': Machine settings > Edit route settings > tick $tsRoute > Save."
+        Start-Process "https://login.tailscale.com/admin/machines/$tsIP" -ErrorAction SilentlyContinue
+        Write-Host '              Waiting for it (up to 5 minutes, press Enter to skip) ' -NoNewline
+        $until = (Get-Date).AddMinutes(5)
+        while ((Get-Date) -lt $until) {
+            if (Test-TsApproved $tsRoute) { $routeOk = $true; break }
+            try { if ([Console]::KeyAvailable -and [Console]::ReadKey($true).Key -eq 'Enter') { break } } catch {}
+            Write-Host '.' -NoNewline; Start-Sleep 2
+        }
+        Say
+        if ($routeOk) { Step 0 'Tailscale route' OK 'approved: the same address works over Tailscale' }
+        else {
+            Step 0 'Tailscale route' WARN 'not approved yet'
+            Hint 'Until it is, phones away from here need the separate Tailscale code. Run Install.bat again to check.'
+        }
+    }
+}
 
 # QR code in the console: qr.py gives rows of 0/1, two rows per text line using half blocks,
 # black on white so every phone camera reads it.
@@ -369,7 +428,11 @@ if ($lan.Count -eq 0) {
     foreach ($n in $lan | Select-Object -Skip 1) { Say "        also: $(& $url $n.IP)   ($($n.Alias))" DarkGray }
     Say "  Then add it to the home screen. iPhone: Share > Add to Home Screen. Android: menu > Add to Home screen." DarkGray
     foreach ($n in $lan) { $page += "On this network ($($n.Alias))|$(& $url $n.IP)|$(& $signIn $n.IP)" }
-    if ($useTs) {
+    if ($routeOk) {
+        Say "  Phones with Tailscale on can use this same code and icon from anywhere." Cyan
+        if ($lan[0].Dhcp) { Say "  Give this PC a fixed IP address in your router ($($lan[0].IP)): the code and the Tailscale route both use it." Yellow }
+    } elseif ($useTs) {
+        # Route not approved yet: a second code, for the PC's Tailscale address.
         # "?" = folded away on the page until asked for: it only works on phones signed in to the same tailnet
         $page += "?Over Tailscale|$(& $url $tsIP)|$(& $signIn $tsIP)"
         Say
@@ -386,7 +449,7 @@ $page | ForEach-Object { $_.Split('|')[1] } | Set-Content (Join-Path $root 'Phon
 if ($page.Count) { & $py "$PSScriptRoot\qr.py" --html (Join-Path $root 'Phone address.html') @page 2>$null }
 
 Say
-Say ("  'Phone address.html' shows the code" + $(if ($useTs) { 's' }) + " again." +
+Say ("  'Phone address.html' shows the code" + $(if ($useTs -and -not $routeOk) { 's' }) + " again." +
      $(if ($obsPw) { ' It contains the OBS password: only show it to people who may control OBS.' }))
-Say '  Tip: give this PC a fixed IP address in your router, so the code never changes.' DarkGray
+if (-not ($routeOk -and $lan[0].Dhcp)) { Say '  Tip: give this PC a fixed IP address in your router, so the code never changes.' DarkGray }
 exit 0

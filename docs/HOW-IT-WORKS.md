@@ -17,6 +17,7 @@ phone browser ──http :8765──▶ server.py (the page, plus a few /api/ ca
 - **Sign-in link:** the installer's QR code opens `http://PC:8765/#pw=PASSWORD` (percent-encoded; `&port=N` when OBS's websocket isn't on 4455).
   The page saves that like a typed-in login, then removes it from the address bar with `history.replaceState`, so a home-screen icon doesn't carry it.
   Browsers never send the `#` part to the server, so it isn't in any request or log.
+- **Local or Tailscale:** `GET /api/net` returns `{tailscale: true}` when the request came from a Tailscale address (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`), or from this PC's own LAN address, which is how traffic through the installer's route arrives (a phone on the real LAN never has it; a browser on the PC itself opening the LAN address is the one false positive). The page asks on every (re)connect and shows *OBS · via Tailscale* in the header and *via Tailscale* under Settings → Connection. Nothing else changes: with the installer's route the address is the same either way.
 - **Home screen:** `manifest.webmanifest` (PNG icons at 192/512, a maskable one, `apple-touch-icon.png` for iPhones) and `sw.js`, a service worker that caches nothing.
   iPhones add it as a full-screen app from plain http. Chrome and Edge only offer *Install app* on https or localhost; at `http://192.168…` they make a shortcut that opens in the browser.
   The icon PNGs are drawn from `icon.svg`; redraw them if it changes.
@@ -158,8 +159,15 @@ t~22    picture live again; that camera isn't touched again for 60 s
 7. **Phone address:** finds this PC's local-network IPv4 addresses, best route first.
    Virtual adapters (Hyper-V, WSL, VirtualBox, VMware, Docker) and VPNs (Tailscale, ZeroTier, WireGuard, …) are skipped, matched on the adapter name and description.
    It prints a QR code for the first address, with the OBS login in the link (see *Sign-in link*), and writes `Phone address.txt` (plain addresses) and `Phone address.html` (QR codes with the login). An update never touches these files.
-   With Tailscale on, it offers to print a second code for the PC's 100.x address. `Phone address.html` also gets it as a folded-away *Show the Tailscale code* card (qr.py: a label starting with `?`).
    Re-run setup after changing OBS's websocket password, or the codes sign phones in with the old one.
+8. **Tailscale route** (with Tailscale chosen; runs inside step 7, once the LAN address is known): the PC advertises its own LAN address as a subnet route, `tailscale set --advertise-routes=<LAN IP>/32`.
+   A phone with Tailscale on (iPhone and Android accept subnet routes by default) then reaches the *same* `http://LAN-IP:port/` from anywhere: one QR code, one home-screen icon, one saved login (localStorage belongs to the address).
+   Tailscale rewrites the source of routed traffic to the PC's own LAN address (seen at SMIC), so Windows Firewall sees it as `LocalSubnet` and the normal rules let it in. Tested on Windows 11 with an Android phone on mobile data (MMIC) and from another site's PC (SMIC).
+   `--advertise-routes` replaces the whole list, so setup reads the current one from `tailscale debug prefs` and keeps routes it didn't add. The route it added is kept in `setup/tailscale-route.txt`, so a new LAN IP replaces the old route, and `-NoTailscale` or `Uninstall.bat` removes it.
+   Tailscale needs the route approved once. Setup checks `tailscale status --json` (`Self.PrimaryRoutes` / `AllowedIPs`); if it isn't approved, it opens `login.tailscale.com/admin/machines/<100.x IP>` and checks every 2 s for up to 5 minutes (Enter skips).
+   A tailnet policy with `"autoApprovers": {"routes": {"192.168.0.0/16": ["user@example.com"]}}` approves it instantly, with no page.
+   Until it's approved, setup falls back to a second code for the PC's 100.x address: offered in the console, and in `Phone address.html` as a folded-away *Show the Tailscale code* card (qr.py: a label starting with `?`).
+   The PC's LAN address then matters twice (code and route), so setup asks for a DHCP reservation when the address came from DHCP.
 
 Notes:
 - `setup/qr.py` is a standard-library QR encoder: byte mode, error correction level M, versions 1-10 (up to 213 bytes).
@@ -171,7 +179,7 @@ Notes:
 - `setup/firewall.ps1` runs elevated. It adds two inbound TCP rules (page port and OBS websocket port), limited to `RemoteAddress LocalSubnet`, or removes them with `-Remove`.
   With `-Tailscale` (when Tailscale was chosen) they also allow `100.64.0.0/10`, which only devices in the tailnet can reach. A Tailscale address is a /32, so `LocalSubnet` alone never covers other tailnet devices.
   The installer re-runs it whenever the rules don't match the Tailscale choice.
-- `setup/uninstall.ps1` stops the server, removes the shortcut and removes the rules.
+- `setup/uninstall.ps1` stops the server, removes the shortcut, removes the Tailscale route setup added (other routes stay) and removes the rules.
 
 ## Updates (GitHub Releases)
 Installed copies follow the repo's **published releases**, like OBS does. Pushing to `main` ships nothing.

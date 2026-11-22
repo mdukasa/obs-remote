@@ -12,6 +12,7 @@ on Listen, streams OBS's monitoring device (listen.py). Python standard library 
 import functools
 import http.server
 import io
+import ipaddress
 import json
 import os
 import queue
@@ -270,6 +271,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                         "notes": rel and rel["notes"], "url": rel and rel["url"],
                                         "update": bool(rel) and vtuple(rel["version"]) > vtuple(cur),
                                         "blocked": update_blocker()})
+        if self.path.split("?")[0] == "/api/net":
+            # How this phone reached the PC. Directly over Tailscale, it comes from a Tailscale address (100.64.0.0/10).
+            # Through the installer's /32 route (the PC's LAN address, used from anywhere), Tailscale rewrites the
+            # source to this PC's OWN LAN address (seen at SMIC, 2026-11-22). A phone really on the LAN never has
+            # that address, so it means Tailscale too. (Only a browser on this PC opening its LAN address looks the same.)
+            try:
+                ip = ipaddress.ip_address(self.client_address[0])
+                ip = getattr(ip, "ipv4_mapped", None) or ip
+                ts = (ip in ipaddress.ip_network("100.64.0.0/10") or ip in ipaddress.ip_network("fd7a:115c:a1e0::/48")
+                      or (not ip.is_loopback and str(ip) in own_addresses()))
+            except ValueError:
+                ts = False
+            return self.send_json(200, {"tailscale": ts})
         if self.path.split("?")[0] == "/api/youtube":
             # Is a YouTube broadcast already set up in OBS (Manage Broadcast on the PC)? Then Start stream just starts.
             return self.send_json(200, {"ready": youtube.broadcast_ready()})
@@ -381,6 +395,14 @@ def lan_ips():
     except OSError:
         pass
     return ips or ["127.0.0.1"]
+
+
+_own = {"at": 0.0, "ips": set()}
+def own_addresses():
+    """lan_ips() as a set, re-read at most once a minute (the address can change, e.g. a new DHCP lease)."""
+    if time.time() - _own["at"] > 60:
+        _own["ips"], _own["at"] = set(lan_ips()), time.time()
+    return _own["ips"]
 
 
 if __name__ == "__main__" and UPDATE_ONLY:
