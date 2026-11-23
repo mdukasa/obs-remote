@@ -7,7 +7,7 @@ This watches the camera pictures through obs-websocket on this PC and does that 
 Which sources: NDI inputs that carry an obs-ptz camera, plus pictures chosen for a camera in the app.
 When is it frozen: the picture was moving (live cameras always change a little) and then shows exactly the
 same frame for FROZEN_SECS. Something that never moves, like a slide or a switched-off camera, is left alone.
-Each fix is logged to autofix.log next to this file and listed in the app's Settings; the list is reloaded from
+Each fix is logged to autofix.log in the data folder (paths.py) and listed in the app's Settings; the list is reloaded from
 that file at startup. README.md (Auto-reconnect of frozen cameras) and docs/HOW-IT-WORKS.md explain it in full.
 """
 import base64
@@ -20,8 +20,9 @@ import struct
 import threading
 import time
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-LOG = os.path.join(HERE, "autofix.log")
+import paths
+
+LOG = paths.data("autofix.log")
 WS_CONFIG = os.path.join(os.environ.get("APPDATA", ""), "obs-studio", "plugin_config", "obs-websocket", "config.json")
 SETTINGS = {"realm": "OBS_WEBSOCKET_DATA_REALM_PROFILE", "slotName": "obs-remote.settings"}  # {autofix: bool}
 CAMERAS = {"realm": "OBS_WEBSOCKET_DATA_REALM_PROFILE", "slotName": "obs-remote.cameras"}   # app's picture choices

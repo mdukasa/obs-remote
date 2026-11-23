@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration for OBS Remote: paste it into the project's artifact configuration on
+     signpath.io (it isn't read from here). The GitHub Action hands SignPath a ZIP (the uploaded GitHub artifact)
+     with one file in it, OBS-Remote-Setup-<version>.exe; SignPath Authenticode-signs that file. product-name is
+     enforced, as SignPath Foundation requires (installer/obs-remote.iss sets it). Check against SignPath's
+     artifact configuration reference when setting the project up. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="OBS-Remote-Setup-*.exe" product-name="OBS Remote">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

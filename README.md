@@ -18,26 +18,28 @@ Control OBS Studio and your PTZ cameras from a phone on the same Wi-Fi. No app s
 - A Windows PC with **OBS Studio 28+**.
 - Phones on the **same network** as that PC.
 - For the Camera tab: the **[obs-ptz](https://github.com/glikely/obs-ptz/releases) plugin, 1.0 (beta) or newer**. The installer offers to install or update it. Everything else works without it.
-- Python 3. The installer offers to install it.
 
 ## Install (about 5 minutes)
-1. **Download** the [latest release](https://github.com/mdukasa/obs-remote/releases/latest) (*Assets* → **Source code (zip)**) and extract it somewhere permanent, e.g. `C:\OBS Remote`.
-2. **Double-click `Install.bat`** and answer its questions. It offers to turn on OBS's WebSocket server and to install obs-ptz, then asks Windows to open the firewall to your local network: click **Yes**.
-3. **If you use obs-ptz:** in OBS, *PTZ Controls* dock → settings → **Websocket access** = **Control**.
-4. **Scan the QR code** with the phone's camera. It opens the app and signs the phone in to OBS in one go. Then add the page to the home screen: on an iPhone, Safari's Share button → **Add to Home Screen** (it then opens full screen like an app); on Android, Chrome's ⋮ menu → **Add to home screen** (a shortcut that opens in Chrome, since phones only fully install apps from https pages).
+1. **Download** `OBS-Remote-Setup-….exe` from the [latest release](https://github.com/mdukasa/obs-remote/releases/latest) (*Assets*) and run it. It installs for your Windows user only (no admin needed) and brings everything it needs, Python included.
+   Windows may say *Windows protected your PC*, because the installer isn't signed: click **More info** → **Run anyway**.
+2. **The setup window opens** at the end (later: Start menu → **OBS Remote**). Work down its list: turn on OBS's remote control, **Allow phones** through the firewall (Windows asks for permission: click **Yes**) and start OBS Remote. It can also install obs-ptz and set up Tailscale.
+3. **If you use obs-ptz:** in OBS, *PTZ Controls* dock → settings → **Websocket access** = **Control**. The setup window says how many cameras phones can control, so you can see it worked.
+4. **Scan the QR code** in the setup window with the phone's camera. It opens the app and signs the phone in to OBS in one go. Then add the page to the home screen: on an iPhone, Safari's Share button → **Add to Home Screen** (it then opens full screen like an app); on Android, Chrome's ⋮ menu → **Add to home screen** (a shortcut that opens in Chrome, since phones only fully install apps from https pages).
 
 <p align="center"><img src="https://raw.githubusercontent.com/mdukasa/obs-remote-assets/main/screenshots/installer.png" width="620" alt="The installer: four checks marked OK, then a QR code and the phone address"></p>
 
-It starts by itself whenever the PC signs in. Run `Install.bat` again any time to repair it, or after changing OBS's WebSocket password. To see the QR code later, open `Phone address.html` in the folder.
+It starts by itself whenever the PC signs in. To see the QR code again, check that everything is working, or fix something, open **OBS Remote** from the Start menu (or double-click `Install.bat` again). It also lists the phones that used the app in the last hour.
+
+**Without the installer:** download *Source code (zip)* instead, extract it somewhere permanent, and double-click `Install.bat` (it offers to install Python if needed). `Install.bat -Console` asks the same questions in a console (so do the switches below, like `-Port 8766`). If you later run the installer, it takes over from that folder.
 
 The QR code contains the OBS WebSocket password, so only show it to people who may control OBS. Phones can also type the password in Settings instead.
 
 Tip: give the OBS PC a **fixed IP address** in your router, so the phone's link never changes.
 
-**Away from the venue's Wi-Fi?** The installer asks whether to set up [Tailscale](https://tailscale.com/) (free; installs it if needed). Say yes and the same QR code and home-screen icon also work from anywhere, on phones with the Tailscale app signed in to the same account: set everyone up locally, and add Tailscale to a phone whenever it's needed. Setup opens Tailscale's admin page once so you can approve this PC's address (*Machine settings* → *Edit route settings* → tick it → *Save*) and turn off key expiry (*Machine settings* → *Disable key expiry*, or the PC drops off Tailscale after about 6 months), and carries on by itself as soon as you do. Give the PC a fixed IP address in your router. To change your answer later, run `Install.bat -Tailscale` or `Install.bat -NoTailscale`.
+**Away from the venue's Wi-Fi?** The setup window can set up [Tailscale](https://tailscale.com/) (free; it installs it if needed). Then the same QR code and home-screen icon also work from anywhere, on phones with the Tailscale app signed in to the same account: set everyone up locally, and add Tailscale to a phone whenever it's needed. Setup opens Tailscale's admin page once so you can approve this PC's address (*Machine settings* → *Edit route settings* → tick it → *Save*) and turn off key expiry (*Machine settings* → *Disable key expiry*, or the PC drops off Tailscale after about 6 months); the window ticks both off by itself as soon as you do. Give the PC a fixed IP address in your router. **Stop using Tailscale** undoes it.
 
 ## Updating
-A dot on the ⚙ button means a new version is out. Open Settings and tap **Update**, or **Check for updates**. OBS keeps running and phones reload by themselves.
+A dot on the ⚙ button means a new version is out. Open Settings and tap **Update**, or **Check for updates**. OBS keeps running and phones reload by themselves. An installed copy updates by running the new installer quietly, so Windows' Apps list shows the new version too.
 
 ## Using it
 - **Scenes:** in Studio Mode, tap a scene to preview it, then **TAKE**. With Studio Mode off, a tap goes straight to program.
@@ -51,17 +53,17 @@ A dot on the ⚙ button means a new version is out. Open Settings and tap **Upda
 
 ## Frozen cameras fix themselves
 Some NDI cameras sometimes freeze: OBS keeps showing the last frame and nothing reports a problem. OBS Remote's server on the OBS PC watches your PTZ cameras' NDI pictures. If one shows exactly the same frame for 20 seconds after it was moving, it re-selects the camera in the NDI source, which brings it back.
-It never moves a camera or changes scenes, works with no phone open, and you can turn it off in Settings → *Cameras*. Each fix is listed there and saved in `autofix.log`.
+It never moves a camera or changes scenes, works with no phone open, and you can turn it off in Settings → *Cameras*. Each fix is listed there and saved in `autofix.log` in `%LOCALAPPDATA%\OBS Remote`.
 Details: [how auto-reconnect works](docs/HOW-IT-WORKS.md#auto-reconnect-of-frozen-ndi-pictures-autofixpy).
 
 ## Troubleshooting
 | Problem | Fix |
 |---|---|
-| Page won't open on the phone | Same Wi-Fi as the PC? Run `Install.bat` again and click Yes. Guest Wi-Fi often blocks this. |
+| Page won't open on the phone | Same Wi-Fi as the PC? Open OBS Remote from the Start menu and fix anything it marks. Guest Wi-Fi often blocks this. |
 | "OBS is closed on the PC" | Tap **Start OBS**. |
-| "OBS isn't answering" | OBS is open but its WebSocket server is off. Run `Install.bat` again and let it turn it on, or tick it in OBS → *Tools → WebSocket Server Settings*. |
-| "Wrong OBS websocket password" | OBS's password changed. Run `Install.bat` again and rescan the code, or type the new password in Settings. |
-| Setup says the server "didn't start" | It names the program using port 8765. Close it, or run `Install.bat -Port 8766`. |
+| "OBS isn't answering" | OBS is open but its WebSocket server is off. Open OBS Remote from the Start menu and turn it on, or tick it in OBS → *Tools → WebSocket Server Settings*. |
+| "Wrong OBS websocket password" | OBS's password changed. Open OBS Remote from the Start menu and rescan its code, or type the new password in Settings. |
+| Setup says the server "didn't start" | It names the program using port 8765. Close it, or run `Install.bat -Port 8766` (the window then uses that port too). |
 | "OBS has no PTZ control for this app" | Install obs-ptz 1.0 (beta) or newer and set *Websocket access* = *Control*. |
 | Camera is very slow even at 100% | Its max speed in the camera's obs-ptz filter in OBS is low. |
 | Camera picture frozen | Wait about 20 s for the automatic fix, or press **Refresh camera**. If it happens often, try turning off *NDI Multicast* in the camera. |
@@ -69,9 +71,32 @@ Details: [how auto-reconnect works](docs/HOW-IT-WORKS.md#auto-reconnect-of-froze
 | Camera keeps moving after the phone lost Wi-Fi | Press **Stop moving**, or recall a preset. |
 
 ## Uninstall
-Double-click `Uninstall.bat`, then delete the folder.
+Windows Settings → *Apps* → **OBS Remote** → Uninstall (or, in the setup window, *More* → **Uninstall**). Without the installer: double-click `Uninstall.bat`, then delete the folder. Logs are kept in `%LOCALAPPDATA%\OBS Remote`; delete that folder too if you don't need them.
 
 ## Security
 Anyone who can open the page **and** knows the OBS WebSocket password can control OBS, which is the same access the password already gives. Listen, **Start OBS** and going live on YouTube also need the password. The firewall only allows the local network, plus your tailnet if you chose Tailscale; don't forward these ports on your router.
+
+## What setup changes on the PC
+Each change is shown in the setup window, and the ones marked *asks first* happen only when you press its button. Uninstalling undoes them.
+- **OBS:** turns on OBS's WebSocket server, keeping its port and password, or making a password if there is none (*asks first*; OBS closes and opens again). Can install or update the [obs-ptz](https://github.com/glikely/obs-ptz) plugin (*asks first*).
+- **Windows Firewall:** two inbound rules named *OBS Remote - …* for the app's port (8765) and OBS's WebSocket port (4455), open only to the local network, plus your tailnet if you chose Tailscale (*asks first*; Windows asks for permission).
+- **Startup and Start menu:** an *OBS Remote* shortcut in each, so the app's small web server starts when you sign in.
+- **Tailscale** (only if you set it up): installs Tailscale if needed, and shares this PC's own LAN address (a single address, nothing else on the network) with your tailnet.
+- **Files:** the program in `%LOCALAPPDATA%\Programs\OBS Remote` (or the folder you extracted), logs and settings in `%LOCALAPPDATA%\OBS Remote`.
+
+## Privacy
+OBS Remote has no accounts, analytics or tracking, and sends nothing about you or your venue anywhere. Phones talk only to the OBS PC. The OBS PC connects to the internet only:
+- to **check for updates**: it asks GitHub (`api.github.com`) for this project's latest release when a phone opens the app or Settings, at most every 10 minutes; GitHub sees the PC's IP address, as with any visit to GitHub;
+- when you ask it to: **Update**, **Install obs-ptz** (from GitHub), **Set up Tailscale** (winget), and the Tailscale admin page it opens in your browser.
+Going live on YouTube goes through OBS's own YouTube connection. Tailscale, OBS, obs-ptz and YouTube have their own privacy policies.
+
+## Code signing policy
+The Windows installer (`OBS-Remote-Setup-*.exe`) is built from this repository by a [GitHub Action](.github/workflows/installer.yml) for each release.
+It is to be signed through SignPath Foundation's free code signing for open-source projects; until that's in place the installer is unsigned.
+- Committers and reviewers: [mdukasa](https://github.com/mdukasa). Changes from anyone else come as pull requests and are reviewed before they're merged.
+- Approvers: [mdukasa](https://github.com/mdukasa) approves each signing request.
+
+## License
+[MIT](LICENSE). Bundled: Python ([PSF License](https://docs.python.org/3/license.html)) in the installer.
 
 How it works inside: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md). Screenshots, full-size demo pictures and the tools that make them: [obs-remote-assets](https://github.com/mdukasa/obs-remote-assets).

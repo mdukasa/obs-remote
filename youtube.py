@@ -21,10 +21,11 @@ import threading
 import time
 
 import autofix  # its minimal obs-websocket client
+import paths
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LOG = os.path.join(HERE, "youtube.log")
-STATE_FILE = os.path.join(HERE, "youtube_state.json")  # survives a server restart while OBS keeps running
+LOG = paths.data("youtube.log")
+STATE_FILE = paths.data("youtube_state.json")  # survives a server restart while OBS keeps running
 NO_WINDOW = 0x08000000
 _lock = threading.Lock()
 

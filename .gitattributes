@@ -6,3 +6,5 @@
 # repo-only material that phones and the OBS PC never need.
 .gitattributes export-ignore
 .gitignore export-ignore
+.github export-ignore
+installer export-ignore

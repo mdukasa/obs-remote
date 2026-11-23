@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OBS Remote</title>
+<link rel="icon" href="/icon.svg">
+<style>
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1f2630; --line:#2a323d; --text:#e6edf3; --dim:#8b949e;
+  --blue:#2f81f7; --red:#e5484d; --green:#2ea043; --amber:#d29922; --r:14px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:820px;margin:0 auto;padding:18px 16px 40px}
+header{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+header img{width:36px;height:36px;border-radius:9px}
+header h1{font-size:20px;margin:0;font-weight:650;flex:1}
+header .ver{color:var(--dim);font-size:13px;font-weight:400;margin-left:6px}
+button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer}
+button:hover{border-color:#3a4553}
+button.primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+button.danger{color:#ff8a8d}
+button:disabled{opacity:.5;cursor:default}
+a{color:#58a6ff}
+.banner{border-radius:var(--r);padding:14px 16px;margin-bottom:14px;display:flex;gap:12px;align-items:center;border:1px solid var(--line);background:var(--panel)}
+.banner.ok{border-color:rgba(46,160,67,.5);background:rgba(46,160,67,.08)}
+.banner.next{border-color:rgba(47,129,247,.55);background:rgba(47,129,247,.08)}
+.banner .t{flex:1}
+.banner b{display:block}
+.job{position:sticky;top:0;z-index:5;border-radius:var(--r);padding:12px 16px;margin-bottom:14px;background:var(--panel2);border:1px solid var(--line);display:none}
+.job.on{display:block}
+.job.err{border-color:var(--red);background:#2a1618}
+.job.done{border-color:rgba(46,160,67,.6);background:#14261a}
+.job .head{display:flex;gap:10px;align-items:center;font-weight:600}
+.job .head span{flex:1}
+.job .lines{color:var(--dim);font-size:13px;margin-top:4px;white-space:pre-wrap}
+.spin{width:14px;height:14px;border:2px solid var(--dim);border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite}
+@keyframes s{to{transform:rotate(360deg)}}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:22px 4px 8px;font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:10px}
+.card.focus{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
+.row{display:flex;gap:12px;align-items:flex-start}
+.dot{width:12px;height:12px;border-radius:50%;margin-top:5px;flex:none;background:var(--dim)}
+.dot.ok{background:var(--green)} .dot.warn{background:var(--amber)} .dot.fail{background:var(--red)} .dot.info{background:#4b5563}
+.body{flex:1;min-width:0}
+.title{font-weight:600}
+.title small{color:var(--dim);font-weight:400;margin-left:6px}
+.detail{color:var(--dim);margin-top:2px}
+.hint{color:#e3b341;margin-top:6px;font-size:14px}
+.sub{margin-top:8px;display:grid;gap:4px}
+.sub div{display:flex;gap:8px;align-items:center;font-size:14px}
+.sub .dot{margin-top:0;width:9px;height:9px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.actions:empty{display:none}
+.pw{font-family:ui-monospace,Consolas,monospace;background:var(--panel2);padding:1px 6px;border-radius:6px}
+.phones{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start}
+.qr{background:#fff;border-radius:12px;padding:6px;line-height:0}
+.qr svg{width:260px;height:260px}
+.url{font-size:18px;font-weight:600;margin:2px 0 8px;word-break:break-all}
+ol{margin:6px 0 0;padding-left:20px;color:var(--dim)} ol li{margin:3px 0}
+details{margin-top:10px} summary{cursor:pointer;color:var(--dim)}
+details .qr{display:inline-block;margin-top:8px}
+details .qr svg{width:200px;height:200px}
+.seen{margin-top:12px;font-size:14px}
+.seen .dot{display:inline-block;margin:0 6px 0 0;width:9px;height:9px;vertical-align:middle}
+.muted{color:var(--dim)}
+.small{font-size:13px}
+.err{color:#ff8a8d}
+@media (max-width:620px){.phones{grid-template-columns:1fr}.qr svg{width:100%;height:auto}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="/icon.svg" alt="">
+    <h1>OBS Remote <span class="ver" id="ver"></span></h1>
+    <button id="refresh" title="Check everything again">Check again</button>
+  </header>
+  <div class="job" id="job"></div>
+  <div id="banner"></div>
+  <div id="content"><div class="card muted">Checking this PC...</div></div>
+</main>
+<script>
+const TOKEN = new URLSearchParams(location.search).get("t") || "";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let S = null, showPw = false, lastSeq = 0, polling = null, dismissed = 0;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: "POST", headers: {"X-Token": TOKEN, "Content-Type": "application/json"}, body: JSON.stringify(body)}
+                                   : {headers: {"X-Token": TOKEN}});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+async function load(fresh) {
+  const first = !S;
+  try { S = await api("/api/status" + (fresh ? "?fresh=1" : "")); render(); }
+  catch (e) { $("content").innerHTML = `<div class="card err">Couldn't check this PC: ${esc(e.message)}. Close this window and open OBS Remote again.</div>`; }
+  if (S && S.job.running) watchJob();
+  else if (S && S.job.seq !== lastSeq) {  // a result that came in while this window was open (not one from before)
+    if (!first) renderJob(S.job);
+    lastSeq = S.job.seq;
+  }
+}
+
+async function act(name, confirmText) {
+  if (confirmText && !confirm(confirmText)) return;
+  try { await api("/api/action", {name}); }
+  catch (e) { renderJob({name: "Couldn't start", running: false, ok: false, error: e.message, lines: []}); return; }
+  watchJob();
+}
+
+function watchJob() {
+  if (polling) return;
+  const tick = async () => {
+    let j; try { j = await api("/api/job"); } catch { j = null; }
+    if (j) { lastSeq = j.seq; renderJob(j); }
+    if (j && j.running) polling = setTimeout(tick, 800);
+    else { polling = null; load(false); }
+  };
+  tick();
+}
+
+function renderJob(j) {
+  const el = $("job");
+  if (!j || (!j.running && j.ok === null)) { el.className = "job"; return; }
+  el.className = "job on" + (j.running ? "" : j.ok ? " done" : " err");
+  const msg = j.running ? (j.lines.at(-1) || "Working...") : j.ok ? j.done : j.error;
+  el.innerHTML = `<div class="head">${j.running ? '<div class="spin"></div>' : ""}<span>${esc(j.name)}${j.running ? "" : j.ok ? " - done" : " - stopped"}</span>
+    ${j.running ? "" : '<button id="jobx">OK</button>'}</div><div class="lines">${esc(msg)}</div>`;
+  if (!j.running) $("jobx").onclick = () => { el.className = "job"; };
+  document.querySelectorAll("button[data-act]").forEach(b => b.disabled = !!j.running);
+}
+
+// ---- the cards -------------------------------------------------------------------------------------------------
+const btn = (name, label, cls = "", confirmText = "") =>
+  `<button class="${cls}" data-act="${name}" data-confirm="${esc(confirmText)}">${esc(label)}</button>`;
+
+function card(id, state, title, detail, opts = {}) {
+  return `<div class="card" id="c-${id}"><div class="row"><div class="dot ${state}"></div><div class="body">
+    <div class="title">${title}${opts.tag ? `<small>${esc(opts.tag)}</small>` : ""}</div>
+    ${detail ? `<div class="detail">${detail}</div>` : ""}
+    ${(opts.hints || []).map(h => `<div class="hint">${h}</div>`).join("")}
+    ${opts.sub ? `<div class="sub">${opts.sub}</div>` : ""}
+    <div class="actions">${opts.actions || ""}</div></div></div></div>`;
+}
+const subline = (state, text) => `<div><span class="dot ${state}"></span><span>${text}</span></div>`;
+const obsClosing = () => S.obs.running ? " OBS closes for a moment and opens again; don't do this during a live stream." : "";
+
+function cards() {
+  const o = S.obs, ws = S.ws, ts = S.ts, fw = S.firewall, sv = S.server, ptz = S.ptz, out = {};
+  const live = o.streaming ? "streaming" : o.recording ? "recording" : "";
+
+  out.obs = o.running && !ws.enabled
+    ? card("obs", "info", "OBS", "OBS is open.")
+    : o.running
+    ? card("obs", o.ok ? "ok" : "warn", "OBS", o.ok ? `OBS ${esc(o.version)} is open${live ? `, <b>${live}</b>` : ""}.`
+        : `OBS is open, but this PC couldn't log in to it: ${esc(o.error)}.`,
+        {hints: !o.ok && ws.enabled ? ["If you just turned remote control on, close OBS and open it again."] : []})
+    : card("obs", "info", "OBS", "OBS is closed. That's fine: setup works either way.");
+
+  out.ws = ws.enabled
+    ? card("ws", ws.auth ? "ok" : "warn", "OBS remote control",
+        `On, port ${ws.port}.` + (S.password ? ` Password: <span class="pw">${showPw ? esc(S.password) : "&bull;&bull;&bull;&bull;&bull;&bull;"}</span> <a href="#" id="pwt">${showPw ? "hide" : "show"}</a>` : ""),
+        {hints: ws.auth ? [] : ["It has no password, so anyone on this network could control OBS. Set one in OBS: Tools > WebSocket Server Settings."]})
+    : card("ws", "warn", "OBS remote control", (ws.config ? "OBS's WebSocket server is off." : "OBS's WebSocket server isn't set up yet.") + " Phones need it to control OBS.",
+        {actions: btn("ws_on", o.running ? "Turn it on (closes and reopens OBS)" : "Turn it on", "primary", o.running ? "OBS will close and open again." + obsClosing() : "")});
+
+  out.firewall = fw.ok
+    ? card("firewall", "ok", "Windows Firewall", `Phones on this network${ts.chosen ? " and on your tailnet" : ""} can connect.`)
+    : card("firewall", "warn", "Windows Firewall", fw.exists ? "The rules don't match the current settings, so phones may not connect." : "Phones can't connect yet.",
+        {actions: btn("firewall", "Allow phones", "primary"), hints: ["Windows will ask for permission: click Yes."]});
+
+  out.server = sv.answering
+    ? card("server", sv.startup ? "ok" : "warn", "OBS Remote server", `Running on port ${S.port}` + (sv.startup ? ", and starts whenever this PC signs in." : "."),
+        {actions: btn("server", sv.startup ? "Restart" : "Start with Windows", sv.startup ? "" : "primary"),
+         hints: sv.startup ? [] : ["It won't start by itself after a restart."]})
+    : card("server", "fail", "OBS Remote server", "Not running, so phones can't open the app." + (sv.error ? ` <span class="small">(${esc(sv.error)})</span>` : ""),
+        {actions: btn("server", "Start it", "primary")});
+
+  // optional
+  if (!ptz) out.ptz = card("ptz", "info", "PTZ cameras", "obs-ptz isn't installed. You only need it to move PTZ cameras from the phone.",
+      {tag: "optional", actions: btn("ptz", "Install obs-ptz", "", "OBS Remote will download obs-ptz from GitHub and install it." + obsClosing())});
+  else if (!ptz.ok) out.ptz = card("ptz", "warn", "PTZ cameras", `obs-ptz ${esc(ptz.version)} is too old for phone control (it needs 1.0 or newer).`,
+      {tag: "optional", actions: btn("ptz", "Update obs-ptz", "primary", "OBS Remote will download the newest obs-ptz from GitHub and install it." + obsClosing())});
+  else if (o.ok && o.ptz.ok) out.ptz = card("ptz", "ok", "PTZ cameras", `obs-ptz ${esc(ptz.version)}: phones can control ${o.ptz.count} camera${o.ptz.count === 1 ? "" : "s"}.`, {tag: "optional"});
+  else if (o.ok) out.ptz = card("ptz", "warn", "PTZ cameras", `obs-ptz ${esc(ptz.version)} doesn't answer phones yet` + (o.ptz.error ? ` (${esc(o.ptz.error)})` : "") + ".",
+      {tag: "optional", hints: ["In OBS, open the PTZ Controls dock's settings and set Websocket access to Control."]});
+  else out.ptz = card("ptz", "ok", "PTZ cameras", `obs-ptz ${esc(ptz.version)} is installed. Its Websocket access must be set to Control (checked here while OBS is open).`, {tag: "optional"});
+
+  if (!ts.installed) out.ts = card("ts", "info", "Away from this Wi-Fi (Tailscale)", "Tailscale is a free VPN. With it, phones signed in to the same Tailscale account can use OBS Remote from anywhere.",
+      {tag: "optional", actions: btn("ts_install", "Set up Tailscale")});
+  else if (!ts.ip) out.ts = card("ts", "warn", "Away from this Wi-Fi (Tailscale)", "Tailscale is installed but not signed in on this PC.",
+      {tag: "optional", actions: btn("ts_open", "Open Tailscale to sign in", "primary")});
+  else if (!ts.chosen) out.ts = card("ts", "info", "Away from this Wi-Fi (Tailscale)", `Tailscale is on (${esc(ts.ip)}), but phones don't use it yet.`,
+      {tag: "optional", actions: btn("ts_on", "Let phones connect over Tailscale"), hints: []});
+  else {
+    const routeLine = ts.dup ? subline("warn", `'${esc(ts.dup)}' already shares ${esc(ts.want)}: give this PC a different fixed IP in your router.`)
+      : ts.stale ? subline("warn", `This PC's address changed to ${esc((ts.want || "").replace("/32", ""))}: update the route.`)
+      : ts.route_ok ? subline("ok", `Same code works from anywhere (${esc(ts.route)}).`)
+      : subline("warn", "Needs approving once in Tailscale's admin page, so the same code works from anywhere.");
+    const keyLine = ts.key_off ? subline("ok", "Key expiry off: this PC stays signed in.")
+      : subline("warn", `Key expiry on: this PC drops off Tailscale on ${esc(ts.expires)}.`);
+    const allOk = !ts.dup && !ts.stale && ts.route_ok && ts.key_off;
+    out.ts = card("ts", allOk ? "ok" : "warn", "Away from this Wi-Fi (Tailscale)", `Phones on your tailnet can connect (${esc(ts.ip)}).`,
+      {tag: "optional", sub: routeLine + keyLine,
+       actions: (ts.stale ? btn("ts_on", "Update the route", "primary") : "")
+              + (!ts.dup && !ts.stale && (!ts.route_ok || !ts.key_off) ? btn("ts_admin", "Open Tailscale's admin page", "primary") : "")
+              + btn("ts_off", "Stop using Tailscale", "", "Phones away from this network will no longer connect.")});
+  }
+  return out;
+}
+
+function phonesCard(ready) {
+  const main = S.codes.find(c => !c.folded), more = S.codes.filter(c => c !== main);
+  if (!main) return card("phones", "warn", "Phones", "This PC has no local network connection right now, so phones can't reach it.");
+  const seen = S.phones.length
+    ? `<div class="seen">${S.phones.slice(0, 6).map(p => `<div><span class="dot ${p.ago < 120 ? "ok" : "info"}"></span>${esc(p.name ? p.name + " (via Tailscale)" : p.tailscale ? "A phone via Tailscale" : p.here ? "A browser on this PC" : p.ip)} <span class="muted">${ago(p.ago)}</span></div>`).join("")}</div>`
+    : `<div class="seen muted">No phone has used it in the last hour.</div>`;
+  return `<div class="card" id="c-phones"><div class="phones">
+    <div class="qr"${ready ? "" : ' style="opacity:.3"'}>${main.svg}</div>
+    <div>
+      ${ready ? "" : '<div class="hint" style="margin:0 0 6px">Finish the steps above first: until then, phones can\'t use this code.</div>'}
+      <div class="title">Scan with each phone's camera</div>
+      <div class="url">${esc(main.url)}</div>
+      <div class="muted small">The code opens OBS Remote and signs the phone in to OBS in one go. The phone must be on the same Wi-Fi as this PC${S.ts.chosen && S.ts.route_ok ? ", or have Tailscale on" : ""}.</div>
+      <ol class="small"><li>iPhone: Safari's Share button &gt; <b>Add to Home Screen</b>.</li><li>Android: Chrome's &#8942; menu &gt; <b>Add to Home screen</b>.</li></ol>
+      ${S.password ? `<div class="hint small">The code contains the OBS password: only show it to people who may control OBS.</div>` : ""}
+      ${S.lan[0] && S.lan[0].dhcp ? `<div class="muted small" style="margin-top:6px">Tip: give this PC a fixed IP address (${esc(S.lan[0].ip)}) in your router${S.lan[0].gateway ? ` (<a href="http://${esc(S.lan[0].gateway)}/" target="_blank" rel="noopener">${esc(S.lan[0].gateway)}</a>)` : ""}, so the code never changes. It's often called a DHCP reservation.</div>` : ""}
+      ${seen}
+    </div></div>
+    ${more.map(c => `<details><summary>${c.folded ? "Code for phones in another tailnet (this PC's Tailscale address)" : esc(c.label)}: ${esc(c.url)}</summary><div class="qr">${c.svg}</div></details>`).join("")}
+  </div>`;
+}
+
+const ago = s => s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : "over an hour ago";
+
+function render() {
+  $("ver").textContent = S.version ? "version " + S.version : "";
+  const c = cards();
+  const steps = [["ws", S.ws.enabled, "Turn on OBS remote control"], ["firewall", S.firewall.ok, "Let phones through the firewall"],
+                 ["server", S.server.answering && S.server.startup, "Start OBS Remote"]];
+  const next = steps.find(s => !s[1]);
+  const ready = !next;
+  $("banner").innerHTML = ready
+    ? `<div class="banner ok"><div class="t"><b>Ready</b>Phones can scan the code below. Everything else here is optional.</div></div>`
+    : `<div class="banner next"><div class="t"><b>Next: ${esc(next[2])}</b>Work down the list: the outlined step is next. Then scan the code with each phone.</div></div>`;
+  const setup = [c.ws, c.firewall, c.server].join("");
+  const optional = [c.ptz, c.ts].join("");
+  $("content").innerHTML = ready
+    ? `${phonesCard(true)}<h2>Status</h2>${c.obs}${setup}<h2>Optional</h2>${optional}${moreCard()}`
+    : `<h2>Set up</h2>${c.obs}${setup}<h2>Optional</h2>${optional}<h2>Phones</h2>${phonesCard(false)}${moreCard()}`;
+  if (next) { const el = $("c-" + next[0]); if (el) el.classList.add("focus"); }
+  document.querySelectorAll("button[data-act]").forEach(b => {
+    b.onclick = () => act(b.dataset.act, b.dataset.confirm);
+    b.disabled = !!S.job.running;
+  });
+  const pwt = $("pwt"); if (pwt) pwt.onclick = e => { e.preventDefault(); showPw = !showPw; render(); };
+}
+
+function moreCard() {
+  return `<details class="card" style="margin-top:22px"><summary>More</summary>
+    <div class="small muted" style="margin-top:8px">Program: ${esc(S.folder)}<br>Logs and settings: ${esc(S.data)}</div>
+    <div class="actions">${btn("uninstall", "Uninstall OBS Remote", "danger", "Stop OBS Remote and remove it from startup, the Start menu, the firewall and Tailscale? Phones will stop working. The folder itself stays.")}</div>
+  </details>`;
+}
+
+$("refresh").onclick = () => { $("refresh").disabled = true; load(true).finally(() => $("refresh").disabled = false); };
+load(false);
+setInterval(() => { if (!polling && !document.hidden) load(false); }, 10000);
+setInterval(() => { if (document.hidden) api("/api/ping").catch(() => {}); }, 20000);
+</script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+# Builds OBS-Remote-Setup-<version>.exe for every published release and attaches it to the release.
+# Installed copies update by downloading that file (server.py, update_with_installer), so until this has run they
+# say "the installer isn't on GitHub yet"; downloaded folders keep updating from the source ZIP meanwhile.
+# Run it by hand (Actions > Build installer > Run workflow) to rebuild a release's installer.
+name: Build installer
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build, e.g. v1.11.0"
+        required: true
+
+permissions:
+  contents: write  # to attach the installer to the release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Inno Setup
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      - name: Check the tag matches VERSION
+        run: |
+          $v = (Get-Content VERSION -TotalCount 1).Trim()
+          if ("v$v" -ne $env:TAG -and $v -ne $env:TAG) { throw "Tag $env:TAG doesn't match VERSION $v" }
+
+      - name: Build
+        run: python installer/build.py
+
+      # Code signing (SignPath Foundation). Turns on once the repository has the variable SIGNPATH_ORGANIZATION_ID
+      # (plus SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG, optionally SIGNPATH_ARTIFACT_CONFIGURATION_SLUG)
+      # and the secret SIGNPATH_API_TOKEN. SignPath Foundation needs each release approved by hand on signpath.io;
+      # this waits up to 2 hours for that. Without the variable the installer is attached unsigned, as before.
+      - name: Upload the unsigned installer for signing
+        id: unsigned
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-unsigned
+          path: installer/dist/OBS-Remote-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Sign with SignPath
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: installer/signed
+
+      - name: Check the signature
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        run: |
+          $f = Get-ChildItem installer/signed/OBS-Remote-Setup-*.exe
+          $s = Get-AuthenticodeSignature $f.FullName
+          if ($s.Status -ne 'Valid') { throw "Signature: $($s.Status) $($s.StatusMessage)" }
+          "Signed by $($s.SignerCertificate.Subject)"
+          Copy-Item $f.FullName installer/dist/ -Force
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload $env:TAG (Get-ChildItem installer/dist/OBS-Remote-Setup-*.exe).FullName --clobber

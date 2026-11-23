@@ -43,7 +43,9 @@ REPO = "mdukasa/obs-remote"
 LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/tags/"  # + tag
 API_HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "obs-remote"}
-KEEP = {"Phone address.txt", "Phone address.html", "autofix.log", "youtube.log", "youtube_state.json"}  # local files an update never touches
+# Local files an update never touches. Logs and state now live in the data folder (paths.py); their old names stay
+# here so a copy that has not moved them yet keeps them.
+KEEP = {"Phone address.txt", "Phone address.html", "autofix.log", "youtube.log", "youtube_state.json"}
 _latest = {"at": 0.0, "release": None}
 
 
@@ -87,12 +89,43 @@ def latest_release(fresh=False):
     if fresh or time.time() - _latest["at"] > 600 or _latest["release"] is None:
         try:
             r = json.loads(fetch(LATEST_URL, 10, API_HEADERS))
+            setup = next((a for a in r.get("assets") or [] if SETUP_ASSET(a.get("name") or "")), None)
             _latest["release"] = {"tag": r["tag_name"], "version": r["tag_name"].lstrip("vV"),
-                                  "notes": (r.get("body") or "").strip()[:2000], "url": r.get("html_url")}
+                                  "notes": (r.get("body") or "").strip()[:2000], "url": r.get("html_url"),
+                                  "setup_url": setup and setup["browser_download_url"]}
         except (OSError, ValueError, KeyError, TypeError):
             _latest["release"] = None
         _latest["at"] = time.time()
     return _latest["release"]
+
+
+# Installed with OBS-Remote-Setup.exe (installer/obs-remote.iss): it brings its own Python in runtime/ and an
+# uninstaller. Such a copy updates by running the release's Setup.exe, which also updates Python and the version in
+# Windows' Apps list; a downloaded folder updates from the release's source ZIP.
+INSTALLED = os.path.exists(os.path.join(HERE, "runtime", "pythonw.exe")) and os.path.exists(os.path.join(HERE, "unins000.exe"))
+SETUP_ASSET = lambda name: name.startswith("OBS-Remote-Setup-") and name.endswith(".exe")
+
+
+def update_with_installer(rel):
+    """Download the release's Setup.exe and start it silently, outside this server: it stops this server, replaces
+    the files and starts the server again (installer/obs-remote.iss, [Run]). Returns the version it installs."""
+    if not rel.get("setup_url"):
+        raise RuntimeError("The installer for %s isn't on GitHub yet. Try again in a few minutes." % rel["tag"])
+    data = fetch(rel["setup_url"], 300, {"User-Agent": "obs-remote"})
+    if data[:2] != b"MZ":
+        raise RuntimeError("The download doesn't look like OBS Remote's installer.")
+    import tempfile
+    exe = os.path.join(tempfile.gettempdir(), "OBS-Remote-Setup-%s.exe" % rel["version"])
+    with open(exe, "wb") as f:
+        f.write(data)
+    log = os.path.join(os.environ.get("LOCALAPPDATA") or HERE, "OBS Remote", "update.log")
+    flags = 0x00000008 | 0x00000200 | 0x01000000  # DETACHED_PROCESS | NEW_PROCESS_GROUP | BREAKAWAY_FROM_JOB
+    args = [exe, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=" + log]
+    try:
+        subprocess.Popen(args, creationflags=flags, close_fds=True)
+    except OSError:
+        subprocess.Popen(args, creationflags=flags & ~0x01000000, close_fds=True)
+    return rel["version"]
 
 
 def update_blocker():
@@ -108,6 +141,8 @@ def install_update(tag=None):
         rel = latest_release(fresh=True)
         if not rel:
             raise RuntimeError("Couldn't find a release on GitHub.")
+        if INSTALLED:
+            return update_with_installer(rel)
         tag = rel["tag"]
     data = fetch(ZIP_URL + tag, 60)
     z = zipfile.ZipFile(io.BytesIO(data))
@@ -246,6 +281,9 @@ def relaunch():
                      creationflags=flags, close_fds=True)
 
 
+PHONES = {}  # ip -> {"seen": time, "tailscale": bool}: see Handler.note_phone
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map,
                       ".webmanifest": "application/manifest+json", ".svg": "image/svg+xml"}
@@ -262,7 +300,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def note_phone(self, tailscale=None):
+        """Remember which phones used the app lately, for the setup window's "phone connected" line."""
+        ip = self.client_address[0]
+        if ip.startswith("::ffff:"):
+            ip = ip[7:]
+        if ip.startswith("127.") or ip == "::1":
+            return
+        p = PHONES.setdefault(ip, {"tailscale": False})
+        p["seen"] = time.time()
+        if tailscale is not None:
+            p["tailscale"] = tailscale
+
     def do_GET(self):
+        if self.path.startswith("/api/") and not self.path.startswith("/api/phones"):
+            self.note_phone()
+        if self.path.split("?")[0] == "/api/phones":
+            # Only for programs on this PC (the setup window): which phones used the app in the last hour.
+            if not self.client_address[0].startswith("127."):
+                return self.send_json(403, {"error": "Not allowed"})
+            now = time.time()
+            return self.send_json(200, {"phones": sorted(
+                ({"ip": ip, "ago": int(now - p["seen"]), "tailscale": p["tailscale"]}
+                 for ip, p in list(PHONES.items()) if now - p["seen"] < 3600), key=lambda p: p["ago"])})
         if self.path.split("?")[0] == "/api/version":
             # ?fresh=1 is the app's "Check for updates" button. GitHub allows 60 unauthenticated requests an
             # hour, so a fresh check still reuses an answer that is under 15 seconds old.
@@ -286,6 +346,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                           and not local_client(str(ip), self.client_address[1], self.server.server_address[1])))
             except ValueError:
                 ts = False
+            self.note_phone(ts)
             return self.send_json(200, {"tailscale": ts})
         if self.path.split("?")[0] == "/api/youtube":
             # Is a YouTube broadcast already set up in OBS (Manage Broadcast on the PC)? Then Start stream just starts.
@@ -373,7 +434,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self.send_json(500, {"error": f"Update failed: {e}"})
         _latest["at"] = 0
         self.send_json(200, {"ok": True, "version": v})
-        restart_later(self.server)
+        if not INSTALLED:  # an installed copy is restarted by the installer
+            restart_later(self.server)
 
     def log_message(self, fmt, *args):  # quiet: one line per page load only
         if self.path in ("/", "/index.html") and sys.stderr:

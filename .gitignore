@@ -7,3 +7,8 @@ autofix.log
 youtube.log
 youtube_state.json
 setup/tailscale-route.txt
+
+# installer/build.py output
+installer/cache/
+installer/build/
+installer/dist/

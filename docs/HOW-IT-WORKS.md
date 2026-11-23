@@ -49,7 +49,7 @@ OBS opens on the desktop of whoever is signed in, because the server runs in tha
 ## Going live on YouTube (`youtube.py`, `youtube.ps1`)
 When OBS is signed in to a YouTube account (no stream key), it won't stream until a broadcast is set up in its *YouTube Broadcast Setup* dialog on the PC, and obs-websocket has no request for that.
 - **Broadcast already set up** (someone used *Manage Broadcast* on the PC to create one or pick a scheduled one): **Start stream** just asks "Start the stream?" and sends `StartStream`, which goes live to it.
-  OBS doesn't report this state, so a watcher thread in `youtube.py` keeps an obs-websocket connection and polls `GetStreamServiceSettings` every 3 s. Setting up a broadcast puts a new `broadcast_id` there; the id of the last stream is remembered (`youtube_state.json`, kept by updates).
+  OBS doesn't report this state, so a watcher thread in `youtube.py` keeps an obs-websocket connection and polls `GetStreamServiceSettings` every 3 s. Setting up a broadcast puts a new `broadcast_id` there; the id of the last stream is remembered (`youtube_state.json` in the data folder).
   A different id that hasn't streamed yet = a broadcast is waiting (`GET /api/youtube` → `{ready}`).
   OBS forgets a set-up broadcast when it restarts, so when OBS's process id changes the watcher counts the current id as used.
 - **Detection:** the stream service is YouTube, profile parameter `Auth/Type` is YouTube and `YouTube/ChannelName` is set. Otherwise **Start stream** just sends `StartStream`.
@@ -128,9 +128,9 @@ The PTZ link stayed connected, and re-selecting the NDI source fixed it every ti
   Saved in OBS, so it's the same for every phone. The watcher re-reads it on every round, so switching it off takes effect within 4 s.
 - **Status:** `GET /api/autofix` returns `{running, enabled, error, watching, events}`, and Settings shows it.
   `running`/`error` come from the connection loop: if OBS is closed or the password is wrong, the thread retries every 15 s and reports why.
-- **History:** each fix (or failed reconnect) is appended to `autofix.log` as `YYYY-MM-DD HH:MM:SS  source  what`.
+- **History:** each fix (or failed reconnect) is appended to `autofix.log` (in the data folder, see *Data folder*) as `YYYY-MM-DD HH:MM:SS  source  what`.
   `events` keeps the last 20 in memory and is refilled from the end of `autofix.log` at startup (`load_history()`), so restarts and self-updates don't empty it.
-  `autofix.log` is in the updater's KEEP list and `.gitignore`.
+  It lives outside the program folder, so updates never touch it. (Its old name in the program folder is still in the updater's KEEP list and `.gitignore`, for copies that haven't moved it yet.)
 - **Cost:** one 320 px JPEG screenshot per watched source every 4 s, about 8 ms of OBS time each. Nothing is sent over the network: OBS and the watcher are on the same PC.
 - `OBS_REMOTE_OBS_HOST` points the watcher at another PC (testing only).
 
@@ -142,9 +142,36 @@ t~20    reconnect: ndi_source_name "" -> 0.8 s -> original name; logged
 t~22    picture live again; that camera isn't touched again for 60 s
 ```
 
+## Data folder (`paths.py`)
+Logs and saved state (`autofix.log`, `youtube.log`, `youtube_state.json`, `tailscale-route.txt`) live in `%LOCALAPPDATA%\OBS Remote` (or `OBS_REMOTE_DATA` if set), apart from the program files, so updates and a future installer never have to step around them.
+`paths.data(name)` gives a file's path there. Importing `paths` moves files an older version left in the program folder (`setup/tailscale-route.txt` included); a file already in the data folder wins.
+`settings.json` there keeps the server's port, so the setup window and `Install.bat -Console` reuse it.
+Versions before 1.11 wrote the QR codes, with the OBS password, to `Phone address.txt` / `.html` in the program folder; setup now deletes those (the setup window shows the codes instead).
+
 ## Setup scripts
-`setup/install.ps1` (run through `Install.bat`, which passes its switches on) goes through these steps in order:
-1. **Python:** finds Python 3.8+, or offers `winget install Python.Python.3.12`.
+All of setup's checks and changes are Python functions in `setup/core.py`; each check returns a dict (`id, label, state: ok|warn|fail|info, detail, hints`), so a setup window can show the same checks as the console.
+- `Install.bat` → `setup/install.ps1`, which only finds Python 3.8+ (`setup/python.ps1`, `Find-Python`, shared with the uninstaller) or offers `winget install Python.Python.3.12`.
+  Then it opens the setup window (`pythonw core.py panel`) and exits with code 10, which tells `Install.bat` to close its console without `pause`.
+  With `-Console` or any other switch it runs `core.py install` in the console instead, passing the switches on (`-Port` → `--port`, `-SkipFirewall` → `--skip-firewall`, `-SkipStartup` → `--skip-startup`, `-Tailscale` / `-NoTailscale`).
+- `python setup/core.py status [--port N]` prints every check as JSON (password masked) and changes nothing.
+- `Uninstall.bat` → `setup/uninstall.ps1` → `core.py uninstall`. Without Python it removes only the Startup shortcut and the firewall rules.
+- LAN addresses (with the router's address) come from `GetAdaptersAddresses` through ctypes, instantly. PowerShell is still used for the firewall rules (through the firewall's COM object, `HNetCfg.FwPolicy2`, ~2 s, a third of `Get-NetFirewallRule`'s time), process command lines (`Get-CimInstance`), obs-ptz's file version and the shortcuts. Independent checks run in parallel (`core.gather`), so `status` takes about 2 s.
+- Admin steps (firewall rules, obs-ptz's installer) go through `ShellExecuteEx` (`core.shell_run`, verb `runas` for the firewall), which raises `Declined` when the permission prompt is answered No (error 1223).
+- The server starts as `pythonw server.py PORT`, detached and out of the console's job, so closing the setup window doesn't stop it.
+
+## Setup window (`setup/panel.py`, `setup/panel.html`)
+`core.py panel` (Start menu → **OBS Remote**, or `Install.bat`) serves a one-page app to this PC only and opens it in an Edge app window (Chrome, else the default browser, if there's no Edge).
+- **Who can reach it:** it listens on `127.0.0.1` at a random port. Every request needs the random token from the window's address (`?t=`, sent back as `X-Token`), and the `Host` header must be `127.0.0.1:port` or `localhost:port`, so a web page can't reach it through DNS rebinding. Responses send `X-Frame-Options: DENY` and a CSP. The OBS password only goes to the window, which shows it masked.
+- **One at a time:** `panel.json` in the data folder holds `{port, token, pid}`. Opening it again finds the running one with `/api/ping` and opens a window on it. It exits ~75 s after its last request (the window asks every 10 s), never during an action, and removes `panel.json`.
+- **Checks:** `GET /api/status` gathers everything in parallel. Firewall rules, addresses and obs-ptz's version are cached for 1-5 minutes and re-read after any change or with *Check again* (`?fresh=1`). It also logs in to OBS like a phone (`core.obs_probe`, autofix's websocket client): OBS's version, whether it's streaming or recording, and whether obs-ptz answers `ptz_list_devices`, which confirms *Websocket access = Control* and counts the cameras. And it asks the server which phones used the app (`GET /api/phones`, answered only to 127.0.0.1; `server.py` notes the address of every `/api/` request, and `/api/net`'s Tailscale answer).
+- **Actions:** `POST /api/action {name}` runs one at a time in a background thread; the window shows its progress lines from `GET /api/job` and the result. `ws_on`, `ptz`: close OBS with `CloseMainWindow` (as if its X were clicked, so it saves and asks if needed), change, then open OBS again. Both refuse while OBS is streaming or recording.
+  OBS sometimes ignores the first close request without logging anything (seen with OBS 32.2.2), so `core.close_obs` asks again every 8 s, for up to 45 s; shutting down takes OBS 10-15 s with several NDI cameras.
+  obs-websocket reads its `config.json` only at startup and doesn't write it back on exit (checked 2026-11-23), so turning it on means writing the file and restarting OBS. `firewall`, `ts_on`/`ts_off` (firewall + route), `ts_install`, `ts_open`, `ts_admin`, `server` (restart + Startup and Start menu shortcuts), `uninstall`. Windows' permission prompt gets the window in front as its owner (`GetForegroundWindow`), so it doesn't open behind it as a flashing taskbar button.
+- **Layout:** until the three needed steps (remote control, firewall, server starting with Windows) are done, the window lists them first with the next one outlined, and greys out the QR code. Once they are, the QR code comes first, then the status, then the optional parts (obs-ptz, Tailscale). Errors from actions land in `panel.log` in the data folder.
+
+## Console setup
+`core.py install` goes through these steps in order:
+1. **Python:** reports the Python that runs it (install.ps1 found or installed it).
 2. **OBS WebSocket server:** reads obs-websocket's `config.json`. If the server is off, or OBS never set it up, it offers to turn it on.
    It sets `server_enabled`, `auth_required` and `first_load: false`, keeping the existing port and password or making a 12-character password.
 3. **obs-ptz:** detects websocket support by looking for `ptz_list_devices` in the DLL.
@@ -158,15 +185,15 @@ t~22    picture live again; that camera isn't touched again for 60 s
    It then checks the page on 127.0.0.1, bypassing any proxy. If there's no answer, it says why: the program holding the port, or the server's own error.
 7. **Phone address:** finds this PC's local-network IPv4 addresses, best route first.
    Virtual adapters (Hyper-V, WSL, VirtualBox, VMware, Docker) and VPNs (Tailscale, ZeroTier, WireGuard, …) are skipped, matched on the adapter name and description.
-   It prints a QR code for the first address, with the OBS login in the link (see *Sign-in link*), and writes `Phone address.txt` (plain addresses) and `Phone address.html` (QR codes with the login). An update never touches these files.
+   It prints a QR code for the first address, with the OBS login in the link (see *Sign-in link*). The setup window shows the same codes.
    Re-run setup after changing OBS's websocket password, or the codes sign phones in with the old one.
 8. **Tailscale route** (with Tailscale chosen; runs inside step 7, once the LAN address is known): the PC advertises its own LAN address as a subnet route, `tailscale set --advertise-routes=<LAN IP>/32`.
    A phone with Tailscale on (iPhone and Android accept subnet routes by default) then reaches the *same* `http://LAN-IP:port/` from anywhere: one QR code, one home-screen icon, one saved login (localStorage belongs to the address).
    Tailscale rewrites the source of routed traffic to the PC's own LAN address (seen at SMIC), so Windows Firewall sees it as `LocalSubnet` and the normal rules let it in. Tested on Windows 11 with an Android phone on mobile data (MMIC) and from another site's PC (SMIC).
-   `--advertise-routes` replaces the whole list, so setup reads the current one from `tailscale debug prefs` and keeps routes it didn't add. The route it added is kept in `setup/tailscale-route.txt`, so a new LAN IP replaces the old route, and `-NoTailscale` or `Uninstall.bat` removes it.
+   `--advertise-routes` replaces the whole list, so setup reads the current one from `tailscale debug prefs` and keeps routes it didn't add. The route it added is kept in `tailscale-route.txt` in the data folder, so a new LAN IP replaces the old route, and `-NoTailscale` or `Uninstall.bat` removes it.
    Tailscale needs the route approved once. Setup checks `tailscale status --json` (`Self.PrimaryRoutes` / `AllowedIPs`); if it isn't approved, it opens `login.tailscale.com/admin/machines/<100.x IP>` and checks every 2 s for up to 5 minutes (Enter skips).
    A tailnet policy with `"autoApprovers": {"routes": {"192.168.0.0/16": ["user@example.com"]}}` approves it instantly, with no page.
-   Until it's approved, setup falls back to a second code for the PC's 100.x address, offered in the console. `Phone address.html` always has it as a folded-away *Show the Tailscale code* card (qr.py: a label starting with `?`): Tailscale doesn't pass routes on when a PC is shared into another tailnet, so phones there can only use the 100.x address.
+   Until it's approved, setup falls back to a second code for the PC's 100.x address, offered in the console. The setup window always has it, folded away: Tailscale doesn't pass routes on when a PC is shared into another tailnet, so phones there can only use the 100.x address.
    **Duplicate address:** if another device in the tailnet already shares the same `/32` (`Peer[].PrimaryRoutes`/`AllowedIPs` in `tailscale status --json`), e.g. another venue's PC with the same LAN IP, setup warns, names it, and doesn't share this PC's address: Tailscale would send phones to only one of them, and both venues would share one icon and login.
    **Key expiry:** Tailscale signs a PC out after about 6 months unless *Disable key expiry* is set on it. Setup reads `Self.KeyExpiry` (absent once disabled), shows the date, and asks for it on the same admin-page visit as the route; it waits for both. Only the admin console or Tailscale's API can change it, and an API key on every venue PC would be able to change the whole tailnet, so setup doesn't do it itself.
    The PC's LAN address then matters twice (code and route), so setup asks for a DHCP reservation when the address came from DHCP.
@@ -174,14 +201,27 @@ t~22    picture live again; that camera isn't touched again for 60 s
 Notes:
 - `setup/qr.py` is a standard-library QR encoder: byte mode, error correction level M, versions 1-10 (up to 213 bytes).
   `--rows URL` prints the matrix as 0/1 lines, which the installer draws in the console with half-block characters, black on white.
-  `--html` writes the page with SVG codes. It was checked by decoding hundreds of random URLs with OpenCV.
-- `install.ps1` must stay ASCII-only: Windows PowerShell 5.1 reads BOM-less scripts in the ANSI code page. That's why the block characters are built with `[char]`.
-  Build an argument list in a variable before passing it to `Start-Process -ArgumentList`: written inline, `@(...) + ...` is read as stray extra arguments, and the call fails.
-  Switches: `-Port`, `-SkipFirewall`, `-SkipStartup`, `-Tailscale`, `-NoTailscale`.
+  `svg()` draws the setup window's codes. It was checked by decoding hundreds of random URLs with OpenCV.
+- The `.ps1` files must stay ASCII-only: Windows PowerShell 5.1 reads BOM-less scripts in the ANSI code page.
+  The console QR is drawn by `core.py` (half blocks, black on white via ANSI colours, which it turns on with `SetConsoleMode`).
+- Firewall rules count as right only when their ports match too, so `Install.bat -Port 8766` updates them.
 - `setup/firewall.ps1` runs elevated. It adds two inbound TCP rules (page port and OBS websocket port), limited to `RemoteAddress LocalSubnet`, or removes them with `-Remove`.
   With `-Tailscale` (when Tailscale was chosen) they also allow `100.64.0.0/10`, which only devices in the tailnet can reach. A Tailscale address is a /32, so `LocalSubnet` alone never covers other tailnet devices.
   The installer re-runs it whenever the rules don't match the Tailscale choice.
-- `setup/uninstall.ps1` stops the server, removes the shortcut, removes the Tailscale route setup added (other routes stay) and removes the rules.
+- `core.py uninstall` stops the server, removes the shortcut, removes the Tailscale route setup added (other routes stay) and removes the rules.
+
+## Installer (`installer/`)
+`OBS-Remote-Setup-<version>.exe` is an Inno Setup 6 installer (`installer/obs-remote.iss`), built by `installer/build.py`, which the GitHub Action `.github/workflows/installer.yml` runs for every published release and attaches to it (it checks the tag matches `VERSION`).
+- **Code signing (SignPath Foundation, free for open source):** the workflow signs only when the repository has the variable `SIGNPATH_ORGANIZATION_ID` (with `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG`, optionally `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG`) and the secret `SIGNPATH_API_TOKEN`. It uploads the unsigned Setup.exe as a GitHub artifact, `signpath/github-action-submit-signing-request@v3` submits it and waits up to 2 hours for the manual approval SignPath Foundation requires, then checks the signature is valid before attaching it. The artifact configuration to paste into signpath.io is `installer/signpath-artifact-configuration.xml`. The installer's file details (product name *OBS Remote*, numeric version, copyright) come from `obs-remote.iss`; SignPath enforces the product name. The README's *Code signing policy*, *Privacy* and *What setup changes on the PC* sections are SignPath Foundation's conditions; signed releases must also carry their attribution line.
+- **Python comes with it:** Python's official embeddable package (pinned version and SHA-256 in `build.py`; its programs are signed by the Python Software Foundation) goes in `runtime/`.
+  That Python only searches the paths in its `._pth` file, not the script's folder, so `build.py` adds `..` (the program folder) there.
+- **Program files:** what `git ls-files` has (tracked and untracked-but-not-ignored, so a local build matches the working tree), minus `.github`, `installer`, `docs`, `Install.bat`, `Uninstall.bat`.
+- **Per user, no admin:** `PrivilegesRequired=lowest`, into `%LOCALAPPDATA%\Programs\OBS Remote`; only the firewall step asks for admin, from the setup window. Unsigned, so a downloaded Setup.exe gets SmartScreen's *Windows protected your PC* (More info → Run anyway). One started by the in-app updater has no download mark, so it doesn't.
+- **After installing**, `core.py start`: on a PC set up before (`settings.json` or the Startup shortcut exists, from any copy) it stops the old server (`stop_servers` also stops another copy on the port), starts this one, and points the Startup and Start menu shortcuts here. On a new PC it does nothing, and the setup window opens.
+- **Before replacing files** (`PrepareToInstall`), `core.py stop` stops every python process whose command line contains this folder (server, setup window), except itself. `[InstallDelete]` removes `runtime/` so a new Python replaces the old one cleanly.
+- **Uninstall** (Apps list, or the setup window's *Uninstall*, which starts `unins000.exe` on an installed copy): `[UninstallRun]` runs `core.py uninstall` (server, shortcuts, Tailscale route, firewall rules: one admin prompt), then the whole folder is deleted. The data folder stays.
+- **Updates:** `server.py` sees an installed copy (`runtime/pythonw.exe` and `unins000.exe` next to it, `INSTALLED`). Its Update downloads the release's `OBS-Remote-Setup-*.exe` asset and starts it detached with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=<data>\update.log`, then answers the phone without restarting itself: the installer stops it and `core.py start` starts the new one (about 15 s; the phone waits up to 90 s). If the release has no installer yet (the Action takes a few minutes), it says to try again shortly.
+- Tested 2026-11-23 on Windows 11: silent install taking over a dev-folder setup, setup window and OBS login on the bundled Python, in-app update test1 → test2 (13 s, Apps list updated, data kept), uninstall (folder, Apps entry, shortcuts, rules, route removed; data kept).
 
 ## Updates (GitHub Releases)
 Installed copies follow the repo's **published releases**, like OBS does. Pushing to `main` ships nothing.
@@ -197,7 +237,7 @@ To test one on a single PC, run `py server.py update v1.3.0-beta1`.
   `latest` and `notes` come from `api.github.com/repos/mdukasa/obs-remote/releases/latest`, cached for 10 minutes.
   That's at most 6 calls an hour, well under GitHub's limit of 60 an hour without an account.
   `blocked` is set when the folder is a git checkout, because those update with `git pull`.
-- `POST /api/update` needs the header `X-OBS-Remote: 1`. A cross-site page can't send it without a CORS preflight, which the server never allows.
+- `POST /api/update` (on a downloaded folder; an installed copy runs the installer, see *Installer*) needs the header `X-OBS-Remote: 1`. A cross-site page can't send it without a CORS preflight, which the server never allows.
   It re-reads the latest release, downloads that tag's ZIP from codeload.github.com, checks that it is OBS Remote, and copies it over the folder, never outside it.
   It never touches `Phone address.txt`.
   Then it stops serving, and the main program starts a fresh `server.py`, which retries the port for up to 10 s.
