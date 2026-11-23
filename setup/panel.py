@@ -377,17 +377,83 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.reply(200, {"ok": True})
 
 
+# Browsers that open a page as an app window (no tabs or address bar) with --app=URL.
+APP_BROWSERS = {"msedge.exe", "chrome.exe", "brave.exe", "vivaldi.exe", "chromium.exe", "thorium.exe"}
+
+
+def _reg(root, path, name=None):
+    """A registry value (name=None: the default value), or None."""
+    import winreg
+    try:
+        with winreg.OpenKey(root, path) as k:
+            return winreg.QueryValueEx(k, name or "")[0]
+    except OSError:
+        return None
+
+
+def edge_redirected():
+    """Is something taking over launches of msedge.exe? Tools like MSEdgeRedirect set a "Debugger" for it in
+    Image File Execution Options (on the key or one of its filter subkeys), so starting Edge runs them instead and
+    an --app window never appears (seen 2026-11-24). Its other mode watches for Edge from a background program, so
+    an installed MSEdgeRedirect counts too."""
+    import winreg
+    ifeo = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\msedge.exe"
+    for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, ifeo, 0, winreg.KEY_READ | view) as k:
+                keys = [k]
+                i = 0
+                while True:
+                    try:
+                        keys.append(winreg.OpenKey(k, winreg.EnumKey(k, i)))
+                    except OSError:
+                        break
+                    i += 1
+                for key in keys:
+                    try:
+                        if winreg.QueryValueEx(key, "Debugger")[0]:
+                            return True
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+    return any(os.path.exists(os.path.join(base, "MSEdgeRedirect", "MSEdgeRedirect.exe"))
+               for base in (os.environ.get("ProgramFiles", ""), os.environ.get("ProgramFiles(x86)", ""),
+                            os.environ.get("LOCALAPPDATA", ""), os.environ.get("APPDATA", "")) if base)
+
+
+def default_browser():
+    """The program the user picked to open web links, or None."""
+    import re
+    import winreg
+    prog = _reg(winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice", "ProgId")
+    cmd = prog and (_reg(winreg.HKEY_CURRENT_USER, r"Software\Classes\%s\shell\open\command" % prog)
+                    or _reg(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Classes\%s\shell\open\command" % prog))
+    m = cmd and re.match(r'\s*"([^"]+)"|\s*(\S+)', cmd)
+    exe = m and (m.group(1) or m.group(2))
+    return exe if exe and os.path.exists(exe) else None
+
+
 def find_browser():
+    """A browser to open the setup window as an app window: the user's default browser if it can, else Edge (unless
+    something redirects it), else Chrome. None: just open the page in the default browser."""
+    redirected = edge_redirected()
+    ok = lambda p: p and os.path.basename(p).lower() in APP_BROWSERS and not (
+        redirected and os.path.basename(p).lower() == "msedge.exe")
+    d = default_browser()
+    if ok(d):
+        return d
     for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")):
         for rel in (r"Microsoft\Edge\Application\msedge.exe", r"Google\Chrome\Application\chrome.exe"):
             p = os.path.join(base or "", rel)
-            if base and os.path.exists(p):
+            if base and os.path.exists(p) and ok(p):
                 return p
     return None
 
 
 def open_window(url):
-    """An app window (no tabs or address bar) in Edge or Chrome, else the default browser."""
+    """An app window (no tabs or address bar) if a suitable browser is there, else a tab in the default browser."""
     b = find_browser()
     if b:
         subprocess.Popen([b, "--app=" + url, "--window-size=880,980"], creationflags=core.DETACHED, close_fds=True)
