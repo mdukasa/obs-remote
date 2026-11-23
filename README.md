@@ -26,7 +26,7 @@ Control OBS Studio and your PTZ cameras from a phone on the same Wi-Fi. No app s
 3. **If you use obs-ptz:** in OBS, *PTZ Controls* dock → settings → **Websocket access** = **Control**. The setup window says how many cameras phones can control, so you can see it worked.
 4. **Scan the QR code** in the setup window with the phone's camera. It opens the app and signs the phone in to OBS in one go. Then add the page to the home screen: on an iPhone, Safari's Share button → **Add to Home Screen** (it then opens full screen like an app); on Android, Chrome's ⋮ menu → **Add to home screen** (a shortcut that opens in Chrome, since phones only fully install apps from https pages).
 
-<p align="center"><img src="https://raw.githubusercontent.com/mdukasa/obs-remote-assets/main/screenshots/installer.png" width="620" alt="The installer: four checks marked OK, then a QR code and the phone address"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/mdukasa/obs-remote-assets/main/screenshots/installer.png" width="620" alt="The setup window: Ready, the QR code for phones, the phones that used it lately, and every check green"></p>
 
 It starts by itself whenever the PC signs in. To see the QR code again, check that everything is working, or fix something, open **OBS Remote** from the Start menu (or double-click `Install.bat` again). It also lists the phones that used the app in the last hour.
 
@@ -49,6 +49,7 @@ A dot on the ⚙ button means a new version is out. Open Settings and tap **Upda
 - **OBS closed or crashed?** A banner says so, with a **Start OBS** button that opens OBS on the PC again.
 - **Refresh camera:** reconnects a camera whose picture froze or whose control stopped answering, e.g. after a reboot.
 - **Listen:** tap **Listen** in the Audio section to hear OBS's monitored sources on the phone, about 0.2 s late; tap again to stop. It's silent until you tap it. The 🎧 button on each source turns OBS monitoring on or off for it. Monitored sources also play on OBS's monitoring device (OBS *Settings → Audio → Advanced*), so point that at a spare output if it's the hall's speakers.
+- **On the OBS PC:** OBS Remote's icon sits by the clock (Windows may tuck it under the ^ arrow; drag it out to keep it in view). Green dot: connected to OBS; amber: not. Hover for how many phones are using it, click to open the setup window and QR code, right-click to start OBS, restart or stop OBS Remote, or turn on notifications when a frozen camera is fixed or an update is out.
 - **Settings (⚙):** connection and picture quality, Studio Mode, which scenes show, hide the audio section, camera names and which OBS source shows each camera.
 
 ## Frozen cameras fix themselves

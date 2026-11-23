@@ -29,6 +29,7 @@ import zipfile
 
 import autofix
 import listen
+import tray
 import youtube
 
 UPDATE_ONLY = len(sys.argv) > 1 and sys.argv[1].lower() == "update"
@@ -423,6 +424,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self.send_json(400, {"error": "Bad request"})
             r = youtube.go_live(form if isinstance(form, dict) else {})
             return self.send_json(200 if r.get("ok") else 409, r)
+        if self.path == "/api/quit":
+            # Only for programs on this PC (setup, the installer): stop cleanly, so the tray icon goes too.
+            if not self.client_address[0].startswith("127."):
+                return self.send_json(403, {"error": "Not allowed"})
+            self.send_json(200, {"ok": True})
+            threading.Thread(target=self.server.shutdown).start()
+            return
         if self.path != "/api/update":
             return self.send_json(403, {"error": "Not allowed"})
         why = update_blocker()
@@ -547,6 +555,30 @@ if __name__ == "__main__":
         sys.exit(f"Can't use port {PORT}: {err}. Close the program using it, or run Install.bat -Port 8766.")
     autofix.start()
     youtube.start()
+
+    def tray_state():
+        rel, cur = _latest["release"], local_version()  # only what a phone's update check already fetched
+        now = time.time()
+        return {"version": cur, "obs": bool(autofix.STATE.get("running")), "events": list(autofix.EVENTS),
+                "phones": sum(1 for p in list(PHONES.values()) if now - p.get("seen", 0) < 120),
+                "update": rel["version"] if rel and vtuple(rel["version"]) > vtuple(cur) else None}
+
+    def tray_restart():
+        RESTART.set()
+        threading.Thread(target=srv.shutdown).start()
+
+    def tray_start_obs():
+        try:
+            start_obs()
+        except OSError:
+            pass
+
+    icon = tray.start({
+        "state": tray_state, "obs_running": obs_running, "start_obs": tray_start_obs, "restart": tray_restart,
+        "stop": lambda: threading.Thread(target=srv.shutdown).start(),
+        "open_panel": lambda: subprocess.Popen([sys.executable, os.path.join(HERE, "setup", "core.py"), "panel"],
+                                               cwd=HERE, close_fds=True, creationflags=0x00000008 | 0x00000200),
+    })
     if sys.stdout:
         print("OBS Remote is running. On your phone (same Wi-Fi), open:")
         for ip in lan_ips():
@@ -557,5 +589,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     srv.server_close()
+    if icon:
+        icon.close()
     if RESTART.is_set():
         relaunch()

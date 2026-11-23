@@ -142,6 +142,14 @@ t~20    reconnect: ndi_source_name "" -> 0.8 s -> original name; logged
 t~22    picture live again; that camera isn't touched again for 60 s
 ```
 
+## Tray icon (`tray.py`)
+`server.py` shows an icon in the notification area from a thread with its own hidden window and message loop (ctypes: `Shell_NotifyIconW`, legacy callback messages). `OBS_REMOTE_NO_TRAY=1` turns it off (setup's diagnostic run of the server uses that).
+- **Picture:** drawn in code at the small-icon size Windows asks for (`SM_CXSMICON`), from the same shapes as `www/icon.svg`, 4x4 supersampled, plus a status dot: green while autofix's websocket client is logged in to OBS (`autofix.STATE["running"]`), amber otherwise. Made into an icon with `CreateIconFromResourceEx` (32-bit BGRA DIB).
+- **Every 3 s** (`WM_TIMER`) it refreshes the dot and the tooltip: version, OBS connected or not, phones seen in the last 2 minutes (`PHONES`), and a newer version if a phone's update check already found one. It never asks GitHub itself.
+- **Click:** opens the setup window (`core.py panel`). **Right-click menu:** status lines, *Open OBS Remote*, *Start OBS* (when OBS is closed), *Notify me of camera fixes and updates* (a tick, kept as `tray_notify` in `settings.json`), *Restart OBS Remote* (the same `RESTART` path as an update), *Stop until next sign-in*.
+- **Notifications** (balloons, no sound) only for what happens while it runs: a new autofix event, or a newer version appearing.
+- **No dead icons:** Windows keeps an icon whose process was killed until the mouse passes over it. So the server removes its icon whenever it stops normally, and setup and the installer ask it to stop with `POST /api/quit` (127.0.0.1 only, `X-OBS-Remote` header) before killing anything (`core.ask_server_to_quit`). It re-adds the icon when Explorer restarts (`TaskbarCreated`).
+
 ## Data folder (`paths.py`)
 Logs and saved state (`autofix.log`, `youtube.log`, `youtube_state.json`, `tailscale-route.txt`) live in `%LOCALAPPDATA%\OBS Remote` (or `OBS_REMOTE_DATA` if set), apart from the program files, so updates and a future installer never have to step around them.
 `paths.data(name)` gives a file's path there. Importing `paths` moves files an older version left in the program folder (`setup/tailscale-route.txt` included); a file already in the data folder wins.

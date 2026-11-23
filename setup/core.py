@@ -514,9 +514,27 @@ def server_processes(port):
     return as_list(r.get("procs")), r.get("owner")
 
 
+def ask_server_to_quit(port, wait=4):
+    """Ask the OBS Remote server on this port to stop by itself (POST /api/quit, 1.11.1+), so its tray icon goes
+    too; a killed process leaves a dead icon until the mouse passes over it. True once the port is free."""
+    req = urllib.request.Request("http://127.0.0.1:%d/api/quit" % port, data=b"", method="POST",
+                                 headers={"X-OBS-Remote": "1"})
+    try:
+        urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=2).close()
+    except Exception:
+        return False
+    end = time.time() + wait
+    while time.time() < end:
+        if not test_page(port)[0]:
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def stop_servers(port):
     """Stop this folder's server, and any other OBS Remote listening on the port (e.g. an older copy in another
     folder: it would stop this one starting). Returns the number of other copies stopped."""
+    ask_server_to_quit(port)
     procs, owner = server_processes(port)
     mine = [p["pid"] for p in procs if SERVER.lower() in p["cmd"].lower()]
     others = []
@@ -597,7 +615,8 @@ def why_not_started(port, proc, err):
                 "Close that program, or run Install.bat -Port %d." % (port + 1)]
     # It stopped by itself: pythonw has nowhere to print, so run it once more with python and show what it says.
     try:
-        r = subprocess.run([sys.executable, SERVER, str(port)], cwd=ROOT, capture_output=True, timeout=15, creationflags=NO_WINDOW)
+        r = subprocess.run([sys.executable, SERVER, str(port)], cwd=ROOT, capture_output=True, timeout=15,
+                           creationflags=NO_WINDOW, env=dict(os.environ, OBS_REMOTE_NO_TRAY="1"))
         why = [ln for ln in r.stderr.decode("utf-8", "replace").splitlines() if ln.strip()][-3:]
     except subprocess.TimeoutExpired:
         why = []
@@ -750,6 +769,7 @@ def status(port=DEFAULT_PORT):
 def stop_folder():
     """Stop every OBS Remote program running from this folder (the server, a setup window), except this one.
     The installer runs it before replacing files: Windows can't replace a file a program has open."""
+    ask_server_to_quit(saved_port())
     script = ("Get-CimInstance Win32_Process -Filter \"Name like 'python%%.exe'\" -ErrorAction SilentlyContinue | "
               "Where-Object { $_.CommandLine -and $_.CommandLine.ToLower().Contains(%s) } | ForEach-Object { $_.ProcessId }"
               % q(ROOT.lower() + os.sep))
