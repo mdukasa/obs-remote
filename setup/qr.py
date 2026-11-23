@@ -264,8 +264,9 @@ def html_page(items):
     cards = "".join(card(it) for it in items if not it[0].startswith("?"))
     extra = [it for it in items if it[0].startswith("?")]  # "?Label": folded away until asked for (e.g. Tailscale)
     if extra:
-        cards += ('<details><summary>Show the Tailscale code</summary><p>For phones away from this network.'
-                  ' The phone needs the Tailscale app, signed in to the same tailnet as this PC.</p>'
+        cards += ('<details><summary>Show the Tailscale code</summary><p>For phones on Tailscale that the code above'
+                  " doesn't reach, such as phones in another tailnet this PC is shared with."
+                  ' The phone needs the Tailscale app, signed in to this PC\'s tailnet or one it is shared with.</p>'
                   f'<div class="wrap">{"".join(card(it) for it in extra)}</div></details>')
     return f"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OBS Remote - phone address</title>

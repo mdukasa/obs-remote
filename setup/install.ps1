@@ -349,10 +349,26 @@ function Test-TsApproved($route) {
     $s = Get-TsJson @('status', '--json')
     $s -and ((@($s.Self.PrimaryRoutes) -contains $route) -or (@($s.Self.AllowedIPs) -contains $route))
 }
+# Key expiry: Tailscale signs a PC out after ~6 months unless "Disable key expiry" is set on it in the admin console
+# (only the console or Tailscale's API, with an API key, can change it). Status shows no KeyExpiry once it's off.
+function Test-TsNoExpiry { $s = Get-TsJson @('status', '--json'); $s -and -not $s.Self.KeyExpiry }
 $oldRoute = if (Test-Path $routeMark) { "$(Get-Content $routeMark -TotalCount 1)".Trim() } else { '' }
-$tsRoute = $null; $routeOk = $false
+$tsRoute = $null; $routeOk = $false; $routeDup = $null
 if ((Test-Path $tsCli) -and $lan.Count -and ($useTs -or $oldRoute)) {
     $want = if ($useTs) { "$($lan[0].IP)/32" } else { '' }
+    # Another device already sharing this address (e.g. another venue's OBS PC with the same LAN IP)? Tailscale would
+    # send phones to only one of them, and both venues' phones would share one icon and login. Don't compete with it.
+    $st = Get-TsJson @('status', '--json')
+    if ($want -and $st -and $st.Peer) {
+        $routeDup = @($st.Peer.PSObject.Properties | ForEach-Object { $_.Value } |
+            Where-Object { (@($_.PrimaryRoutes) + @($_.AllowedIPs)) -contains $want }) | Select-Object -First 1
+        if ($routeDup) {
+            Step 0 'Tailscale route' WARN "'$($routeDup.HostName)' already shares $want on your tailnet"
+            Hint "Two PCs with the same address can't both work over Tailscale. Give this PC a different fixed IP"
+            Hint 'in your router (or change the other one), then run Install.bat again.'
+            $want = ''
+        }
+    }
     $prefs = Get-TsJson @('debug', 'prefs')
     if ($prefs) {
         # "tailscale set --advertise-routes" replaces the whole list, so keep any routes someone else added
@@ -362,36 +378,53 @@ if ((Test-Path $tsCli) -and $lan.Count -and ($useTs -or $oldRoute)) {
         if (-not $same) { & $tsCli set "--advertise-routes=$($new -join ',')" 2>&1 | Out-Null }
         if ($same -or $LASTEXITCODE -eq 0) {
             if ($want) { Set-Content $routeMark $want -Encoding ASCII; $tsRoute = $want }
-            elseif (Test-Path $routeMark) { Remove-Item $routeMark; Step 0 'Tailscale route' INFO "removed ($oldRoute)" }
+            elseif (Test-Path $routeMark) { Remove-Item $routeMark; if (-not $routeDup) { Step 0 'Tailscale route' INFO "removed ($oldRoute)" } }
         } else {
             Step 0 'Tailscale route' WARN "Tailscale didn't accept the change"
             Hint 'Run Install.bat as the Windows user who signed in to Tailscale on this PC.'
         }
     } else { Step 0 'Tailscale route' WARN "couldn't read Tailscale's settings"; Hint 'Is Tailscale running? Then run Install.bat again.' }
 }
-if ($tsRoute) {
-    $routeOk = Test-TsApproved $tsRoute
-    if ($routeOk) { Step 0 'Tailscale route' OK "the same address works over Tailscale ($tsRoute)" }
-    else {
-        $tsName = (Get-TsJson @('status', '--json')).Self.DNSName -replace '\..*$', ''
-        if (-not $tsName) { $tsName = $env:COMPUTERNAME.ToLower() }
-        Step 0 'Tailscale route' WARN 'needs approving once in Tailscale'
-        Hint "So the same code works over Tailscale, approve this PC's route. In the page that opens:"
-        Hint "sign in if asked, then on '$tsName': Machine settings > Edit route settings > tick $tsRoute > Save."
-        Start-Process "https://login.tailscale.com/admin/machines/$tsIP" -ErrorAction SilentlyContinue
-        Write-Host '              Waiting for it (up to 5 minutes, press Enter to skip) ' -NoNewline
-        $until = (Get-Date).AddMinutes(5)
-        while ((Get-Date) -lt $until) {
-            if (Test-TsApproved $tsRoute) { $routeOk = $true; break }
-            try { if ([Console]::KeyAvailable -and [Console]::ReadKey($true).Key -eq 'Enter') { break } } catch {}
-            Write-Host '.' -NoNewline; Start-Sleep 2
-        }
-        Say
+# One visit to this PC's page in the admin console covers both: approving the route and turning off key expiry.
+# Setup then waits and carries on by itself as soon as both show up in "tailscale status".
+if ($tsRoute) { $routeOk = Test-TsApproved $tsRoute }
+$keyOk = -not ($useTs -and $tsIP -and (Test-Path $tsCli)) -or (Test-TsNoExpiry)
+if ($tsRoute -and $routeOk) { Step 0 'Tailscale route' OK "the same address works over Tailscale ($tsRoute)" }
+if ($useTs -and $tsIP -and $keyOk) { Step 0 'Tailscale key expiry' OK 'off: this PC stays signed in to Tailscale' }
+if (($tsRoute -and -not $routeOk) -or -not $keyOk) {
+    $s = Get-TsJson @('status', '--json')
+    $tsName = "$($s.Self.DNSName)" -replace '\..*$', ''
+    if (-not $tsName) { $tsName = $env:COMPUTERNAME.ToLower() }
+    $expires = try { ([datetime]$s.Self.KeyExpiry).ToString('d MMMM yyyy') } catch { 'in a few months' }
+    if (-not $keyOk) {
+        Step 0 'Tailscale key expiry' WARN "on: this PC drops off Tailscale on $expires"
+    }
+    if ($tsRoute -and -not $routeOk) { Step 0 'Tailscale route' WARN 'needs approving once in Tailscale' }
+    Hint "In the page that opens (sign in if asked), on '$tsName' click Machine settings, then:"
+    if (-not $keyOk) { Hint '  - Disable key expiry   (so phones can still reach this PC in six months)' }
+    if ($tsRoute -and -not $routeOk) { Hint "  - Edit route settings > tick $tsRoute > Save   (so the same code works over Tailscale)" }
+    Start-Process "https://login.tailscale.com/admin/machines/$tsIP" -ErrorAction SilentlyContinue
+    Write-Host '              Waiting (up to 5 minutes, press Enter to skip) ' -NoNewline
+    $until = (Get-Date).AddMinutes(5)
+    while ((Get-Date) -lt $until) {
+        if ($tsRoute -and -not $routeOk) { $routeOk = Test-TsApproved $tsRoute }
+        if (-not $keyOk) { $keyOk = Test-TsNoExpiry }
+        if (($routeOk -or -not $tsRoute) -and $keyOk) { break }
+        try { if ([Console]::KeyAvailable -and [Console]::ReadKey($true).Key -eq 'Enter') { break } } catch {}
+        Write-Host '.' -NoNewline; Start-Sleep 2
+    }
+    Say
+    if ($tsRoute) {
         if ($routeOk) { Step 0 'Tailscale route' OK 'approved: the same address works over Tailscale' }
         else {
             Step 0 'Tailscale route' WARN 'not approved yet'
             Hint 'Until it is, phones away from here need the separate Tailscale code. Run Install.bat again to check.'
         }
+    }
+    if ($keyOk) { Step 0 'Tailscale key expiry' OK 'off: this PC stays signed in to Tailscale' }
+    else {
+        Step 0 'Tailscale key expiry' WARN "still on: on $expires this PC drops off Tailscale until someone signs in again"
+        Hint 'Run Install.bat again any time to finish this.'
     }
 }
 
@@ -431,6 +464,9 @@ if ($lan.Count -eq 0) {
     if ($routeOk) {
         Say "  Phones with Tailscale on can use this same code and icon from anywhere." Cyan
         if ($lan[0].Dhcp) { Say "  Give this PC a fixed IP address in your router ($($lan[0].IP)): the code and the Tailscale route both use it." Yellow }
+        # Still kept, folded away on the page: Tailscale doesn't pass routes on when a PC is shared into another
+        # tailnet, so phones there can only use the PC's own 100.x address.
+        $page += "?Over Tailscale|$(& $url $tsIP)|$(& $signIn $tsIP)"
     } elseif ($useTs) {
         # Route not approved yet: a second code, for the PC's Tailscale address.
         # "?" = folded away on the page until asked for: it only works on phones signed in to the same tailnet
