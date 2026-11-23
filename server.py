@@ -18,6 +18,7 @@ import os
 import queue
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -275,12 +276,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # How this phone reached the PC. Directly over Tailscale, it comes from a Tailscale address (100.64.0.0/10).
             # Through the installer's /32 route (the PC's LAN address, used from anywhere), Tailscale rewrites the
             # source to this PC's OWN LAN address (seen at SMIC, 2026-11-22). A phone really on the LAN never has
-            # that address, so it means Tailscale too. (Only a browser on this PC opening its LAN address looks the same.)
+            # that address, so it means Tailscale too. A browser on this PC opening its LAN address looks the same, but
+            # then a program here owns the other end of the connection (local_client); routed traffic has none.
             try:
                 ip = ipaddress.ip_address(self.client_address[0])
                 ip = getattr(ip, "ipv4_mapped", None) or ip
                 ts = (ip in ipaddress.ip_network("100.64.0.0/10") or ip in ipaddress.ip_network("fd7a:115c:a1e0::/48")
-                      or (not ip.is_loopback and str(ip) in own_addresses()))
+                      or (not ip.is_loopback and str(ip) in own_addresses()
+                          and not local_client(str(ip), self.client_address[1], self.server.server_address[1])))
             except ValueError:
                 ts = False
             return self.send_json(200, {"tailscale": ts})
@@ -395,6 +398,43 @@ def lan_ips():
     except OSError:
         pass
     return ips or ["127.0.0.1"]
+
+
+def local_client(ip, port, server_port):
+    """Did a program on this PC (other than Tailscale) open the connection from ip:port to our server_port?
+    Looks it up in Windows' TCP table (GetExtendedTcpTable, with owning process). False when there's no such
+    socket (traffic routed in by Tailscale arrives with no local socket behind it), when Tailscale owns it, or off
+    Windows / on any error, which keeps the old answer ("via Tailscale")."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        iphlp, k32 = ctypes.WinDLL("iphlpapi"), ctypes.WinDLL("kernel32")
+        size = wintypes.DWORD(0)
+        iphlp.GetExtendedTcpTable(None, ctypes.byref(size), False, 2, 5, 0)  # AF_INET, TCP_TABLE_OWNER_PID_ALL
+        buf = ctypes.create_string_buffer(size.value + 4096)
+        size.value = len(buf)
+        if iphlp.GetExtendedTcpTable(buf, ctypes.byref(size), False, 2, 5, 0) != 0:
+            return False
+        n = ctypes.cast(buf, ctypes.POINTER(wintypes.DWORD))[0]
+        rows = ctypes.cast(ctypes.byref(buf, 4), ctypes.POINTER(wintypes.DWORD * 6))  # state, laddr, lport, raddr, rport, pid
+        want = (socket.inet_aton(ip), socket.htons(port), socket.htons(server_port))
+        for i in range(n):
+            _state, laddr, lport, _raddr, rport, pid = rows[i]
+            if (struct.pack("<I", laddr), lport & 0xFFFF, rport & 0xFFFF) != want:
+                continue
+            h = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            name = ""
+            if h:
+                path, plen = ctypes.create_unicode_buffer(520), wintypes.DWORD(520)
+                if k32.QueryFullProcessImageNameW(h, 0, path, ctypes.byref(plen)):
+                    name = os.path.basename(path.value).lower()
+                k32.CloseHandle(h)
+            return not name.startswith("tailscale")
+        return False
+    except Exception:
+        return False
 
 
 _own = {"at": 0.0, "ips": set()}
