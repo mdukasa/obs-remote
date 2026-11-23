@@ -97,7 +97,7 @@ def status():
         p["name"] = next((q["name"] for q in ts["peers"] if p["ip"] in q["ips"]), None)
     codes = core.phone_codes(lan, ts["ip"] if chosen else None, port, ws)
     for c in codes:
-        c["svg"] = qr.svg(c.pop("qr"), scale=7)
+        c["svg"] = qr.svg(c.pop("qr"), scale=7, logo=True)  # the app icon in the middle
     with _lock:
         job = dict(JOB, lines=list(JOB["lines"]))
     return {
@@ -461,19 +461,42 @@ def open_window(url):
         os.startfile(url)
 
 
+def code_time():
+    """When this copy's program files last changed (an update, or an edit in a dev folder)."""
+    return max(os.path.getmtime(os.path.join(core.SETUP, n)) for n in ("panel.py", "core.py", "qr.py"))
+
+
 def running_instance():
-    """The URL of a panel that's already open, or None."""
+    """The URL of a panel that's already open, or None. A panel started before its program files last changed (an
+    update replaced them) is stopped instead, so the new code runs: a running Python keeps the old code loaded."""
     try:
         with open(INSTANCE, encoding="utf-8") as f:
             inst = json.load(f)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         req = urllib.request.Request("http://127.0.0.1:%d/api/ping" % inst["port"], headers={"X-Token": inst["token"]})
         with opener.open(req, timeout=2) as r:
-            if r.status == 200:
-                return "http://127.0.0.1:%d/?t=%s" % (inst["port"], inst["token"])
+            if r.status != 200:
+                return None
+        if inst.get("root") != core.ROOT or inst.get("started", 0) < code_time():
+            stop_instance(inst)
+            return None
+        return "http://127.0.0.1:%d/?t=%s" % (inst["port"], inst["token"])
     except Exception:
         pass
     return None
+
+
+def stop_instance(inst=None):
+    """Stop the open panel by the process id it wrote down (its command line may hold only a relative path)."""
+    try:
+        if inst is None:
+            with open(INSTANCE, encoding="utf-8") as f:
+                inst = json.load(f)
+        pid = int(inst["pid"])
+        if pid != os.getpid():
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, creationflags=core.NO_WINDOW)
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
 
 
 def main(open_it=True):
@@ -489,7 +512,7 @@ def main(open_it=True):
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = srv.server_address[1]
     with open(INSTANCE, "w", encoding="utf-8") as f:
-        json.dump({"port": port, "token": TOKEN, "pid": os.getpid()}, f)
+        json.dump({"port": port, "token": TOKEN, "pid": os.getpid(), "root": core.ROOT, "started": time.time()}, f)
     url = "http://127.0.0.1:%d/?t=%s" % (port, TOKEN)
 
     def idle():

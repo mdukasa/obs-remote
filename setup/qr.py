@@ -4,16 +4,20 @@
     python qr.py --html OUT.html "Label|URL[|QR]" ...   # a page with a big QR code per address ("?Label" = folded away)
                                                     # (QR = what the code holds, if not URL, e.g. URL + login)
 
-Byte mode, error correction level M, versions 1-10 (up to 213 bytes, plenty for a URL).
+Byte mode, versions 1-10. Error correction level M (up to 213 bytes), or H for codes with the app icon in the
+middle (svg(..., logo=True); up to 119 bytes, still plenty for a sign-in link): H rebuilds up to 30% of the code, so
+covering ~6% of it with the icon leaves a wide margin for glare and blur.
 Follows ISO/IEC 18004; the structure mirrors Project Nayuki's reference implementation.
 """
 import html
 import sys
 
-# Error correction level M, versions 1..10: EC codewords per block, number of blocks
-ECC_PER_BLOCK = [None, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26]
-NUM_BLOCKS = [None, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5]
-ECL_FORMAT_BITS = 0  # M
+# Error correction levels, versions 1..10 (ISO/IEC 18004 tables 9 and 7):
+# format bits, EC codewords per block, number of blocks
+LEVELS = {
+    "M": (0, [None, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26], [None, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5]),
+    "H": (2, [None, 17, 28, 22, 16, 22, 28, 26, 26, 24, 28], [None, 1, 1, 2, 4, 4, 4, 5, 6, 8, 8]),
+}
 
 
 def raw_modules(ver):
@@ -26,8 +30,9 @@ def raw_modules(ver):
     return n
 
 
-def data_codewords(ver):
-    return raw_modules(ver) // 8 - ECC_PER_BLOCK[ver] * NUM_BLOCKS[ver]
+def data_codewords(ver, level="M"):
+    _, ecc, blocks = LEVELS[level]
+    return raw_modules(ver) // 8 - ecc[ver] * blocks[ver]
 
 
 # --- Reed-Solomon over GF(256), polynomial 0x11D -----------------------------------------
@@ -62,11 +67,11 @@ def rs_remainder(data, divisor):
 
 
 # --- encoding ----------------------------------------------------------------------------
-def encode_codewords(text):
+def encode_codewords(text, level="M"):
     data = text.encode("utf-8")
     for ver in range(1, 11):
         cc_bits = 8 if ver < 10 else 16
-        if 4 + cc_bits + 8 * len(data) <= data_codewords(ver) * 8:
+        if 4 + cc_bits + 8 * len(data) <= data_codewords(ver, level) * 8:
             break
     else:
         raise ValueError("Text too long for this QR maker")
@@ -76,7 +81,7 @@ def encode_codewords(text):
     put(len(data), cc_bits)
     for b in data:
         put(b, 8)
-    cap = data_codewords(ver) * 8
+    cap = data_codewords(ver, level) * 8
     put(0, min(4, cap - len(bits)))  # terminator
     put(0, (8 - len(bits) % 8) % 8)
     pad = 0xEC
@@ -86,7 +91,7 @@ def encode_codewords(text):
     words = [int("".join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
 
     # split into blocks, add EC, interleave
-    nblocks, ecl = NUM_BLOCKS[ver], ECC_PER_BLOCK[ver]
+    nblocks, ecl = LEVELS[level][2][ver], LEVELS[level][1][ver]
     raw = raw_modules(ver) // 8
     nshort = nblocks - raw % nblocks
     short_len = raw // nblocks
@@ -108,8 +113,8 @@ def encode_codewords(text):
     return ver, out
 
 
-def make(text):
-    ver, words = encode_codewords(text)
+def make(text, level="M"):
+    ver, words = encode_codewords(text, level)
     size = ver * 4 + 17
     mod = [[False] * size for _ in range(size)]
     fun = [[False] * size for _ in range(size)]
@@ -147,7 +152,7 @@ def make(text):
                         setf(a + dx, b + dy, max(abs(dx), abs(dy)) != 1)
 
     def draw_format(mask):
-        data = ECL_FORMAT_BITS << 3 | mask
+        data = LEVELS[level][0] << 3 | mask
         rem = data
         for _ in range(10):
             rem = (rem << 1) ^ ((rem >> 9) * 0x537)
@@ -250,12 +255,35 @@ def rows(text, quiet=2):
     return out + [blank] * quiet
 
 
-def svg(text, scale=8, quiet=4):
-    m = make(text)
-    n = len(m) + 2 * quiet
-    path = "".join(f"M{x + quiet},{y + quiet}h1v1h-1z" for y, r in enumerate(m) for x, c in enumerate(r) if c)
+# The app icon (www/icon.svg), drawn in a 512 x 512 box
+ICON = ('<rect width="512" height="512" rx="112" fill="#0e1116"/><circle cx="256" cy="256" r="150" fill="none" '
+        'stroke="#2f81f7" stroke-width="28"/><circle cx="256" cy="256" r="58" fill="#e5484d"/><path d="M256 70v60M256 '
+        '382v60M70 256h60M382 256h60" stroke="#c9d1d9" stroke-width="24" stroke-linecap="round"/>')
+
+
+def logo_box(size):
+    """The square of modules the logo covers: odd, centred, about 23% of the side (~5-6% of the area)."""
+    k = max(5, round(size * 0.23)) | 1
+    return (size - k) // 2, k
+
+
+def svg(text, scale=8, quiet=4, logo=False):
+    """The code as an SVG. logo=True: error correction H, with the modules in the middle left out and the app icon
+    drawn there on white."""
+    m = make(text, "H" if logo else "M")
+    n, size = len(m) + 2 * quiet, len(m)
+    a, k = logo_box(size) if logo else (0, 0)
+    hidden = lambda x, y: logo and a <= x < a + k and a <= y < a + k
+    path = "".join(f"M{x + quiet},{y + quiet}h1v1h-1z" for y, r in enumerate(m) for x, c in enumerate(r)
+                   if c and not hidden(x, y))
+    icon = ""
+    if logo:
+        pad = 0.6  # white gap round the icon, in modules
+        p, w = a + quiet + pad, k - 2 * pad
+        icon = f'<svg x="{p}" y="{p}" width="{w}" height="{w}" viewBox="0 0 512 512" shape-rendering="geometricPrecision">{ICON}</svg>'
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {n} {n}" width="{n * scale}" height="{n * scale}" '
-            f'shape-rendering="crispEdges"><rect width="{n}" height="{n}" fill="#fff"/><path d="{path}" fill="#000"/></svg>')
+            f'shape-rendering="crispEdges"><rect width="{n}" height="{n}" fill="#fff"/><path d="{path}" fill="#000"/>'
+            f'{icon}</svg>')
 
 
 def html_page(items):

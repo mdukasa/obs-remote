@@ -9,6 +9,9 @@
 :root{
   --bg:#0e1116; --panel:#161b22; --panel2:#1f2630; --line:#2a323d; --text:#e6edf3; --dim:#8b949e;
   --blue:#2f81f7; --red:#e5484d; --green:#2ea043; --amber:#d29922; --r:14px;
+  /* Corners nest: something sitting a card's padding (14 px) in from the card's corner gets the card's radius minus
+     that gap, kept at a small 4 px so it doesn't look sharp. Used by the icon tiles and the QR code. */
+  --r-in:max(calc(var(--r) - 14px), 4px);
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -17,7 +20,8 @@ header{display:flex;align-items:center;gap:12px;margin-bottom:14px}
 header img{width:36px;height:36px;border-radius:9px}
 header h1{font-size:20px;margin:0;font-weight:650;flex:1}
 header .ver{color:var(--dim);font-size:13px;font-weight:400;margin-left:6px}
-button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer}
+button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+button svg{width:17px;height:17px;flex:none}
 button:hover{border-color:#3a4553}
 button.primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
 button.danger{color:#ff8a8d}
@@ -28,21 +32,35 @@ a{color:#58a6ff}
 .banner.next{border-color:rgba(47,129,247,.55);background:rgba(47,129,247,.08)}
 .banner .t{flex:1}
 .banner b{display:block}
+.banner>svg{width:28px;height:28px;flex:none}
+.banner.ok>svg{color:#3fb950} .banner.next>svg{color:#58a6ff}
 .job{position:sticky;top:0;z-index:5;border-radius:var(--r);padding:12px 16px;margin-bottom:14px;background:var(--panel2);border:1px solid var(--line);display:none}
 .job.on{display:block}
 .job.err{border-color:var(--red);background:#2a1618}
 .job.done{border-color:rgba(46,160,67,.6);background:#14261a}
 .job .head{display:flex;gap:10px;align-items:center;font-weight:600}
 .job .head span{flex:1}
-.job .lines{color:var(--dim);font-size:13px;margin-top:4px;white-space:pre-wrap}
+.job .lines{color:var(--dim);font-size:13px;margin-top:4px;white-space:pre-wrap;padding-left:28px}
+.job .head>svg{width:18px;height:18px;flex:none}
+.job.done .head>svg{color:#3fb950} .job.err .head>svg{color:#ff7b72}
+.job .spin{margin:2px}
 .spin{width:14px;height:14px;border:2px solid var(--dim);border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite}
 @keyframes s{to{transform:rotate(360deg)}}
 h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:22px 4px 8px;font-weight:600}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:10px}
 .card.focus{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
-.row{display:flex;gap:12px;align-items:flex-start}
-.dot{width:12px;height:12px;border-radius:50%;margin-top:5px;flex:none;background:var(--dim)}
-.dot.ok{background:var(--green)} .dot.warn{background:var(--amber)} .dot.fail{background:var(--red)} .dot.info{background:#4b5563}
+.row{display:flex;gap:14px;align-items:flex-start}
+/* Card icon: a tile tinted in the status colour, with a small badge (check, !, x) so the state doesn't rest on colour */
+.tile{position:relative;width:40px;height:40px;border-radius:var(--r-in);display:grid;place-items:center;flex:none;background:var(--panel2);color:var(--dim)}
+.tile>svg{width:22px;height:22px}
+.tile.ok{background:rgba(46,160,67,.15);color:#3fb950}
+.tile.warn{background:rgba(210,153,34,.16);color:#e3b341}
+.tile.fail{background:rgba(229,72,77,.16);color:#ff7b72}
+.badge{position:absolute;right:-5px;bottom:-5px;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--panel);color:#fff}
+.badge svg{width:10px;height:10px;stroke-width:3.5}
+.tile.ok .badge{background:var(--green)} .tile.warn .badge{background:var(--amber)} .tile.fail .badge{background:var(--red)}
+.ic{display:inline-flex;flex:none;line-height:0} .ic svg{width:16px;height:16px}
+.st-ok{color:#3fb950} .st-warn{color:#e3b341} .st-fail{color:#ff7b72} .st-info{color:var(--dim)}
 .body{flex:1;min-width:0}
 .title{font-weight:600}
 .title small{color:var(--dim);font-weight:400;margin-left:6px}
@@ -50,20 +68,26 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)
 .hint{color:#e3b341;margin-top:6px;font-size:14px}
 .sub{margin-top:8px;display:grid;gap:4px}
 .sub div{display:flex;gap:8px;align-items:center;font-size:14px}
-.sub .dot{margin-top:0;width:9px;height:9px}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .actions:empty{display:none}
 .pw{font-family:ui-monospace,Consolas,monospace;background:var(--panel2);padding:1px 6px;border-radius:6px}
 .phones{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start}
-.qr{background:#fff;border-radius:12px;padding:6px;line-height:0}
-.qr svg{width:260px;height:260px}
+.qr{background:#fff;border-radius:var(--r-in);padding:6px;line-height:0}
+/* 300 px: the code has the app icon in the middle (error correction H, so 41 x 41 modules); at 260 px a blurry
+   phone camera read it noticeably less often in tests, at 300 px about as often as the old plain code. */
+.qr svg{width:300px;height:300px}
 .url{font-size:18px;font-weight:600;margin:2px 0 8px;word-break:break-all}
 ol{margin:6px 0 0;padding-left:20px;color:var(--dim)} ol li{margin:3px 0}
-details{margin-top:10px} summary{cursor:pointer;color:var(--dim)}
+details{margin-top:10px} summary{cursor:pointer;color:var(--dim);list-style:none;display:flex;align-items:center;gap:6px}
+summary::-webkit-details-marker{display:none}
+summary .ic svg{transition:transform .15s} details[open]>summary .ic svg{transform:rotate(90deg)}
 details .qr{display:inline-block;margin-top:8px}
-details .qr svg{width:200px;height:200px}
-.seen{margin-top:12px;font-size:14px}
-.seen .dot{display:inline-block;margin:0 6px 0 0;width:9px;height:9px;vertical-align:middle}
+details .qr svg{width:260px;height:260px}
+.seen{margin-top:12px;font-size:14px;display:grid;gap:4px}
+.seen div{display:flex;align-items:center;gap:8px}
+.ptitle{display:flex;align-items:center;gap:8px}
+.ptitle .ic svg{width:18px;height:18px;color:var(--dim)}
+a.pwt{display:inline-flex;align-items:center;gap:4px;vertical-align:middle} a.pwt svg{width:15px;height:15px}
 .muted{color:var(--dim)}
 .small{font-size:13px}
 .err{color:#ff8a8d}
@@ -75,7 +99,7 @@ details .qr svg{width:200px;height:200px}
   <header>
     <img src="/icon.svg" alt="">
     <h1>OBS Remote <span class="ver" id="ver"></span></h1>
-    <button id="refresh" title="Check everything again">Check again</button>
+    <button id="refresh" title="Check everything again"><i class="ic" data-i="refresh"></i>Check again</button>
   </header>
   <div class="job" id="job"></div>
   <div id="banner"></div>
@@ -86,6 +110,41 @@ const TOKEN = new URLSearchParams(location.search).get("t") || "";
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let S = null, showPw = false, lastSeq = 0, polling = null, dismissed = 0;
+
+/* ---- icons: the phone app's style (www/index.html): 24x24, 2 px round strokes, drawn in the text colour ---- */
+const svgI = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICON = {
+  // the same drawings as the phone app
+  monitor: svgI('<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>'),
+  camera: svgI('<path d="M15 10l5-3v10l-5-3z"/><rect x="3" y="6" width="12" height="12" rx="2"/>'),
+  refresh: svgI('<path d="M21 4v5h-5"/><path d="M20.1 15a8.5 8.5 0 1 1-1.9-8.9L21 9"/>'),
+  power: svgI('<path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/>'),
+  eye: svgI('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  eyeOff: svgI('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><path d="M3 3l18 18"/>'),
+  // added for the PC, in the same style
+  plug: svgI('<path d="M9 3v4M15 3v4"/><path d="M6 7h12v3a6 6 0 0 1-12 0z"/><path d="M12 16v5"/>'),
+  shield: svgI('<path d="M12 3l8 3v6c0 4.8-3.4 7.9-8 9-4.6-1.1-8-4.2-8-9V6z"/>'),
+  shieldCheck: svgI('<path d="M12 3l8 3v6c0 4.8-3.4 7.9-8 9-4.6-1.1-8-4.2-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>'),
+  server: svgI('<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/>'),
+  globe: svgI('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.5 3.9 5.5 3.9 9s-1.3 6.5-3.9 9c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3z"/>'),
+  phone: svgI('<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/>'),
+  play: svgI('<path d="M7 4.5v15l12-7.5z"/>'),
+  download: svgI('<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>'),
+  external: svgI('<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
+  trash: svgI('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
+  link: svgI('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
+  key: svgI('<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M16 7l3 3M14 9l2 2"/>'),
+  chevron: svgI('<path d="M9 6l6 6-6 6"/>'),
+  folder: svgI('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+  check: svgI('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+  bang: svgI('<path d="M12 6v7M12 18h.01"/>'),
+  x: svgI('<path d="M6 6l12 12M18 6L6 18"/>'),
+  checkCircle: svgI('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>'),
+  alertCircle: svgI('<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/>'),
+  nextCircle: svgI('<circle cx="12" cy="12" r="9"/><path d="M8 12h8M13 8l4 4-4 4"/>'),
+};
+const ic = name => `<i class="ic">${ICON[name] || ""}</i>`;
+const BADGE = {ok: "check", warn: "bang", fail: "x"};
 
 async function api(path, body) {
   const r = await fetch(path, body ? {method: "POST", headers: {"X-Token": TOKEN, "Content-Type": "application/json"}, body: JSON.stringify(body)}
@@ -129,25 +188,33 @@ function renderJob(j) {
   if (!j || (!j.running && j.ok === null)) { el.className = "job"; return; }
   el.className = "job on" + (j.running ? "" : j.ok ? " done" : " err");
   const msg = j.running ? (j.lines.at(-1) || "Working...") : j.ok ? j.done : j.error;
-  el.innerHTML = `<div class="head">${j.running ? '<div class="spin"></div>' : ""}<span>${esc(j.name)}${j.running ? "" : j.ok ? " - done" : " - stopped"}</span>
+  el.innerHTML = `<div class="head">${j.running ? '<div class="spin"></div>' : j.ok ? ICON.checkCircle : ICON.alertCircle}<span>${esc(j.name)}${j.running ? "" : j.ok ? " - done" : " - stopped"}</span>
     ${j.running ? "" : '<button id="jobx">OK</button>'}</div><div class="lines">${esc(msg)}</div>`;
   if (!j.running) $("jobx").onclick = () => { el.className = "job"; };
   document.querySelectorAll("button[data-act]").forEach(b => b.disabled = !!j.running);
 }
 
 // ---- the cards -------------------------------------------------------------------------------------------------
-const btn = (name, label, cls = "", confirmText = "") =>
-  `<button class="${cls}" data-act="${name}" data-confirm="${esc(confirmText)}">${esc(label)}</button>`;
+// Each action's icon, so the same action looks the same wherever it appears.
+const ACT_ICON = {ws_on: "power", firewall: "shieldCheck", server: "play", ptz: "download", ts_install: "download",
+                  ts_open: "external", ts_admin: "external", ts_on: "globe", ts_off: "x", uninstall: "trash"};
+const btn = (name, label, cls = "", confirmText = "", icon = ACT_ICON[name]) =>
+  `<button class="${cls}" data-act="${name}" data-confirm="${esc(confirmText)}">${ICON[icon] || ""}${esc(label)}</button>`;
+// Each card's icon
+const CARD_ICON = {obs: "monitor", ws: "plug", firewall: "shield", server: "server", ptz: "camera", ts: "globe", phones: "phone"};
+const STATE_WORD = {ok: "OK", warn: "Needs attention", fail: "Not working", info: ""};
 
 function card(id, state, title, detail, opts = {}) {
-  return `<div class="card" id="c-${id}"><div class="row"><div class="dot ${state}"></div><div class="body">
+  const tile = `<div class="tile ${state}" title="${STATE_WORD[state]}">${ICON[opts.icon || CARD_ICON[id]] || ""}`
+             + (BADGE[state] ? `<span class="badge">${ICON[BADGE[state]]}</span>` : "") + `</div>`;
+  return `<div class="card" id="c-${id}"><div class="row">${tile}<div class="body">
     <div class="title">${title}${opts.tag ? `<small>${esc(opts.tag)}</small>` : ""}</div>
     ${detail ? `<div class="detail">${detail}</div>` : ""}
     ${(opts.hints || []).map(h => `<div class="hint">${h}</div>`).join("")}
     ${opts.sub ? `<div class="sub">${opts.sub}</div>` : ""}
     <div class="actions">${opts.actions || ""}</div></div></div></div>`;
 }
-const subline = (state, text) => `<div><span class="dot ${state}"></span><span>${text}</span></div>`;
+const subline = (state, text, icon) => `<div><span class="ic st-${state}">${ICON[icon]}</span><span>${text}</span></div>`;
 const obsClosing = () => S.obs.running ? " OBS closes for a moment and opens again; don't do this during a live stream." : "";
 
 function cards() {
@@ -164,7 +231,7 @@ function cards() {
 
   out.ws = ws.enabled
     ? card("ws", ws.auth ? "ok" : "warn", "OBS remote control",
-        `On, port ${ws.port}.` + (S.password ? ` Password: <span class="pw">${showPw ? esc(S.password) : "&bull;&bull;&bull;&bull;&bull;&bull;"}</span> <a href="#" id="pwt">${showPw ? "hide" : "show"}</a>` : ""),
+        `On, port ${ws.port}.` + (S.password ? ` Password: <span class="pw">${showPw ? esc(S.password) : "&bull;&bull;&bull;&bull;&bull;&bull;"}</span> <a href="#" id="pwt" class="pwt">${showPw ? ICON.eyeOff : ICON.eye}${showPw ? "hide" : "show"}</a>` : ""),
         {hints: ws.auth ? [] : ["It has no password, so anyone on this network could control OBS. Set one in OBS: Tools > WebSocket Server Settings."]})
     : card("ws", "warn", "OBS remote control", (ws.config ? "OBS's WebSocket server is off." : "OBS's WebSocket server isn't set up yet.") + " Phones need it to control OBS.",
         {actions: btn("ws_on", o.running ? "Turn it on (closes and reopens OBS)" : "Turn it on", "primary", o.running ? "OBS will close and open again." + obsClosing() : "")});
@@ -176,7 +243,7 @@ function cards() {
 
   out.server = sv.answering
     ? card("server", sv.startup ? "ok" : "warn", "OBS Remote server", `Running on port ${S.port}` + (sv.startup ? ", and starts whenever this PC signs in." : "."),
-        {actions: btn("server", sv.startup ? "Restart" : "Start with Windows", sv.startup ? "" : "primary"),
+        {actions: btn("server", sv.startup ? "Restart" : "Start with Windows", sv.startup ? "" : "primary", "", sv.startup ? "refresh" : "play"),
          hints: sv.startup ? [] : ["It won't start by itself after a restart."]})
     : card("server", "fail", "OBS Remote server", "Not running, so phones can't open the app." + (sv.error ? ` <span class="small">(${esc(sv.error)})</span>` : ""),
         {actions: btn("server", "Start it", "primary")});
@@ -198,16 +265,16 @@ function cards() {
   else if (!ts.chosen) out.ts = card("ts", "info", "Away from this Wi-Fi (Tailscale)", `Tailscale is on (${esc(ts.ip)}), but phones don't use it yet.`,
       {tag: "optional", actions: btn("ts_on", "Let phones connect over Tailscale"), hints: []});
   else {
-    const routeLine = ts.dup ? subline("warn", `'${esc(ts.dup)}' already shares ${esc(ts.want)}: give this PC a different fixed IP in your router.`)
-      : ts.stale ? subline("warn", `This PC's address changed to ${esc((ts.want || "").replace("/32", ""))}: update the route.`)
-      : ts.route_ok ? subline("ok", `Same code works from anywhere (${esc(ts.route)}).`)
-      : subline("warn", "Needs approving once in Tailscale's admin page, so the same code works from anywhere.");
-    const keyLine = ts.key_off ? subline("ok", "Key expiry off: this PC stays signed in.")
-      : subline("warn", `Key expiry on: this PC drops off Tailscale on ${esc(ts.expires)}.`);
+    const routeLine = ts.dup ? subline("warn", `'${esc(ts.dup)}' already shares ${esc(ts.want)}: give this PC a different fixed IP in your router.`, "link")
+      : ts.stale ? subline("warn", `This PC's address changed to ${esc((ts.want || "").replace("/32", ""))}: update the route.`, "link")
+      : ts.route_ok ? subline("ok", `Same code works from anywhere (${esc(ts.route)}).`, "link")
+      : subline("warn", "Needs approving once in Tailscale's admin page, so the same code works from anywhere.", "link");
+    const keyLine = ts.key_off ? subline("ok", "Key expiry off: this PC stays signed in.", "key")
+      : subline("warn", `Key expiry on: this PC drops off Tailscale on ${esc(ts.expires)}.`, "key");
     const allOk = !ts.dup && !ts.stale && ts.route_ok && ts.key_off;
     out.ts = card("ts", allOk ? "ok" : "warn", "Away from this Wi-Fi (Tailscale)", `Phones on your tailnet can connect (${esc(ts.ip)}).`,
       {tag: "optional", sub: routeLine + keyLine,
-       actions: (ts.stale ? btn("ts_on", "Update the route", "primary") : "")
+       actions: (ts.stale ? btn("ts_on", "Update the route", "primary", "", "refresh") : "")
               + (!ts.dup && !ts.stale && (!ts.route_ok || !ts.key_off) ? btn("ts_admin", "Open Tailscale's admin page", "primary") : "")
               + btn("ts_off", "Stop using Tailscale", "", "Phones away from this network will no longer connect.")});
   }
@@ -218,13 +285,13 @@ function phonesCard(ready) {
   const main = S.codes.find(c => !c.folded), more = S.codes.filter(c => c !== main);
   if (!main) return card("phones", "warn", "Phones", "This PC has no local network connection right now, so phones can't reach it.");
   const seen = S.phones.length
-    ? `<div class="seen">${S.phones.slice(0, 6).map(p => `<div><span class="dot ${p.ago < 120 ? "ok" : "info"}"></span>${esc(p.name ? p.name + " (via Tailscale)" : p.tailscale ? "A phone via Tailscale" : p.here ? "A browser on this PC" : p.ip)} <span class="muted">${ago(p.ago)}</span></div>`).join("")}</div>`
+    ? `<div class="seen">${S.phones.slice(0, 6).map(p => `<div><span class="ic st-${p.ago < 120 ? "ok" : "info"}">${ICON[p.tailscale || p.name ? "globe" : "phone"]}</span>${esc(p.name ? p.name + " (via Tailscale)" : p.tailscale ? "A phone via Tailscale" : p.here ? "A browser on this PC" : p.ip)} <span class="muted">${ago(p.ago)}</span></div>`).join("")}</div>`
     : `<div class="seen muted">No phone has used it in the last hour.</div>`;
   return `<div class="card" id="c-phones"><div class="phones">
     <div class="qr"${ready ? "" : ' style="opacity:.3"'}>${main.svg}</div>
     <div>
       ${ready ? "" : '<div class="hint" style="margin:0 0 6px">Finish the steps above first: until then, phones can\'t use this code.</div>'}
-      <div class="title">Scan with each phone's camera</div>
+      <div class="title ptitle">${ic("phone")}Scan with each phone's camera</div>
       <div class="url">${esc(main.url)}</div>
       <div class="muted small">The code opens OBS Remote and signs the phone in to OBS in one go. The phone must be on the same Wi-Fi as this PC${S.ts.chosen && S.ts.route_ok ? ", or have Tailscale on" : ""}.</div>
       <ol class="small"><li>iPhone: Safari's Share button &gt; <b>Add to Home Screen</b>.</li><li>Android: Chrome's &#8942; menu &gt; <b>Add to Home screen</b>.</li></ol>
@@ -232,7 +299,7 @@ function phonesCard(ready) {
       ${S.lan[0] && S.lan[0].dhcp ? `<div class="muted small" style="margin-top:6px">Tip: give this PC a fixed IP address (${esc(S.lan[0].ip)}) in your router${S.lan[0].gateway ? ` (<a href="http://${esc(S.lan[0].gateway)}/" target="_blank" rel="noopener">${esc(S.lan[0].gateway)}</a>)` : ""}, so the code never changes. It's often called a DHCP reservation.</div>` : ""}
       ${seen}
     </div></div>
-    ${more.map(c => `<details><summary>${c.folded ? "Code for phones in another tailnet (this PC's Tailscale address)" : esc(c.label)}: ${esc(c.url)}</summary><div class="qr">${c.svg}</div></details>`).join("")}
+    ${more.map(c => `<details><summary>${ic("chevron")}${c.folded ? "Code for phones in another tailnet (this PC's Tailscale address)" : esc(c.label)}: ${esc(c.url)}</summary><div class="qr">${c.svg}</div></details>`).join("")}
   </div>`;
 }
 
@@ -246,8 +313,8 @@ function render() {
   const next = steps.find(s => !s[1]);
   const ready = !next;
   $("banner").innerHTML = ready
-    ? `<div class="banner ok"><div class="t"><b>Ready</b>Phones can scan the code below. Everything else here is optional.</div></div>`
-    : `<div class="banner next"><div class="t"><b>Next: ${esc(next[2])}</b>Work down the list: the outlined step is next. Then scan the code with each phone.</div></div>`;
+    ? `<div class="banner ok">${ICON.checkCircle}<div class="t"><b>Ready</b>Phones can scan the code below. Everything else here is optional.</div></div>`
+    : `<div class="banner next">${ICON.nextCircle}<div class="t"><b>Next: ${esc(next[2])}</b>Work down the list: the outlined step is next. Then scan the code with each phone.</div></div>`;
   const setup = [c.ws, c.firewall, c.server].join("");
   const optional = [c.ptz, c.ts].join("");
   $("content").innerHTML = ready
@@ -262,12 +329,13 @@ function render() {
 }
 
 function moreCard() {
-  return `<details class="card" style="margin-top:22px"><summary>More</summary>
-    <div class="small muted" style="margin-top:8px">Program: ${esc(S.folder)}<br>Logs and settings: ${esc(S.data)}</div>
+  return `<details class="card" style="margin-top:22px"><summary>${ic("chevron")}More</summary>
+    <div class="small muted" style="margin-top:8px;display:grid;gap:4px"><span class="ptitle">${ic("folder")}Program: ${esc(S.folder)}</span><span class="ptitle">${ic("folder")}Logs and settings: ${esc(S.data)}</span></div>
     <div class="actions">${btn("uninstall", "Uninstall OBS Remote", "danger", "Stop OBS Remote and remove it from startup, the Start menu, the firewall and Tailscale? Phones will stop working. The folder itself stays.")}</div>
   </details>`;
 }
 
+document.querySelectorAll("i[data-i]").forEach(i => i.innerHTML = ICON[i.dataset.i] || "");
 $("refresh").onclick = () => { $("refresh").disabled = true; load(true).finally(() => $("refresh").disabled = false); };
 load(false);
 setInterval(() => { if (!polling && !document.hidden) load(false); }, 10000);

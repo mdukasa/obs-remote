@@ -770,6 +770,11 @@ def stop_folder():
     """Stop every OBS Remote program running from this folder (the server, a setup window), except this one.
     The installer runs it before replacing files: Windows can't replace a file a program has open."""
     ask_server_to_quit(saved_port())
+    try:  # the setup window, by the process id it wrote down (it may have been started with a relative path)
+        import panel
+        panel.stop_instance()
+    except Exception:
+        pass
     script = ("Get-CimInstance Win32_Process -Filter \"Name like 'python%%.exe'\" -ErrorAction SilentlyContinue | "
               "Where-Object { $_.CommandLine -and $_.CommandLine.ToLower().Contains(%s) } | ForEach-Object { $_.ProcessId }"
               % q(ROOT.lower() + os.sep))
