@@ -6,71 +6,89 @@
 <title>OBS Remote</title>
 <link rel="icon" href="/icon.svg">
 <style>
+/* Look: the phone app's (www/index.html; reasoning in docs/redesign-prototype.html). OBS-like neutral greys and the
+   system font. Colour only means something: green = working, amber = needs attention, red = not working, blue =
+   the next step / selected. Main actions are white keys, the rest grey. Checks sit as rows in grouped lists, like
+   the app's Settings page; each row's tile carries a ✓ / ! / × badge so a state never rests on colour alone. */
 :root{
-  --bg:#0e1116; --panel:#161b22; --panel2:#1f2630; --line:#2a323d; --text:#e6edf3; --dim:#8b949e;
-  --blue:#2f81f7; --red:#e5484d; --green:#2ea043; --amber:#d29922; --r:14px;
-  /* Corners nest: something sitting a card's padding (14 px) in from the card's corner gets the card's radius minus
-     that gap, kept at a small 4 px so it doesn't look sharp. Used by the icon tiles and the QR code. */
-  --r-in:max(calc(var(--r) - 14px), 4px);
+  --bg:#17181c; --panel:#1f2025; --key:#2a2b31; --key-hi:#353740; --line:#393b44; --text:#ececee; --dim:#9a9ca5;
+  --sel:#4f7dd8; --sel-dim:#16233d; --ok:#2fbf57; --ok-dim:#14281b; --warn:#e9a23b; --warn-dim:#2d2210; --bad:#e5372f; --bad-dim:#331817;
+  --r:10px;
+  /* Corners nest: something sitting a row's padding (14 px) in from a list's corner gets a smaller radius. */
+  --r-in:6px;
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 main{max-width:820px;margin:0 auto;padding:18px 16px 40px}
-header{display:flex;align-items:center;gap:12px;margin-bottom:14px}
-header img{width:36px;height:36px;border-radius:9px}
-header h1{font-size:20px;margin:0;font-weight:650;flex:1}
+header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+header img{width:34px;height:34px;border-radius:8px}
+header h1{font-size:19px;margin:0;font-weight:600;flex:1}
 header .ver{color:var(--dim);font-size:13px;font-weight:400;margin-left:6px}
-button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+button{font:inherit;font-size:14px;color:inherit;background:var(--key);border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-weight:500}
 button svg{width:17px;height:17px;flex:none}
-button:hover{border-color:#3a4553}
-button.primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
-button.danger{color:#ff8a8d}
-button:disabled{opacity:.5;cursor:default}
-a{color:#58a6ff}
-.banner{border-radius:var(--r);padding:14px 16px;margin-bottom:14px;display:flex;gap:12px;align-items:center;border:1px solid var(--line);background:var(--panel)}
-.banner.ok{border-color:rgba(46,160,67,.5);background:rgba(46,160,67,.08)}
-.banner.next{border-color:rgba(47,129,247,.55);background:rgba(47,129,247,.08)}
+button:hover{background:var(--key-hi)}
+button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var(--sel);outline-offset:2px}
+button.primary{background:var(--text);border-color:var(--text);color:#141518;font-weight:600}
+button.primary:hover{background:#d6d6da}
+button.danger{color:#ff8f88;border-color:#5a2a28}
+button.danger:hover{background:var(--bad-dim)}
+button:disabled{opacity:.45;cursor:default}
+a{color:#8fb0ff}
+/* what to do next / ready */
+.banner{border-radius:var(--r);padding:12px 14px;margin-bottom:16px;display:flex;gap:12px;align-items:center;border:1px solid var(--line);background:var(--panel)}
+.banner.ok{border-color:#2a6b3c;background:var(--ok-dim)}
+.banner.next{border-color:var(--sel);background:var(--sel-dim)}
 .banner .t{flex:1}
-.banner b{display:block}
-.banner>svg{width:28px;height:28px;flex:none}
-.banner.ok>svg{color:#3fb950} .banner.next>svg{color:#58a6ff}
-.job{position:sticky;top:0;z-index:5;border-radius:var(--r);padding:12px 16px;margin-bottom:14px;background:var(--panel2);border:1px solid var(--line);display:none}
+.banner b{display:block;font-weight:600}
+.banner>svg{width:26px;height:26px;flex:none}
+.banner.ok>svg{color:var(--ok)} .banner.next>svg{color:#8fb0ff}
+/* a running action (Turn it on, Allow phones, ...) */
+.job{position:sticky;top:0;z-index:5;border-radius:var(--r);padding:12px 14px;margin-bottom:16px;background:var(--key);border:1px solid var(--line);display:none;box-shadow:0 8px 20px -10px #000}
 .job.on{display:block}
-.job.err{border-color:var(--red);background:#2a1618}
-.job.done{border-color:rgba(46,160,67,.6);background:#14261a}
+.job.err{border-color:var(--bad);background:var(--bad-dim)}
+.job.done{border-color:#2a6b3c;background:var(--ok-dim)}
 .job .head{display:flex;gap:10px;align-items:center;font-weight:600}
 .job .head span{flex:1}
 .job .lines{color:var(--dim);font-size:13px;margin-top:4px;white-space:pre-wrap;padding-left:28px}
 .job .head>svg{width:18px;height:18px;flex:none}
-.job.done .head>svg{color:#3fb950} .job.err .head>svg{color:#ff7b72}
+.job.done .head>svg{color:var(--ok)} .job.err .head>svg{color:#ff8f88}
 .job .spin{margin:2px}
 .spin{width:14px;height:14px;border:2px solid var(--dim);border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite}
 @keyframes s{to{transform:rotate(360deg)}}
-h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:22px 4px 8px;font-weight:600}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:10px}
-.card.focus{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
-.row{display:flex;gap:14px;align-items:flex-start}
-/* Card icon: a tile tinted in the status colour, with a small badge (check, !, x) so the state doesn't rest on colour */
-.tile{position:relative;width:40px;height:40px;border-radius:var(--r-in);display:grid;place-items:center;flex:none;background:var(--panel2);color:var(--dim)}
-.tile>svg{width:22px;height:22px}
-.tile.ok{background:rgba(46,160,67,.15);color:#3fb950}
-.tile.warn{background:rgba(210,153,34,.16);color:#e3b341}
-.tile.fail{background:rgba(229,72,77,.16);color:#ff7b72}
-.badge{position:absolute;right:-5px;bottom:-5px;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--panel);color:#fff}
-.badge svg{width:10px;height:10px;stroke-width:3.5}
-.tile.ok .badge{background:var(--green)} .tile.warn .badge{background:var(--amber)} .tile.fail .badge{background:var(--red)}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:3s}}
+/* section labels and grouped lists, as in the app's Settings */
+h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);margin:22px 4px 7px;font-weight:600;display:flex;align-items:center;gap:6px}
+h2 small{text-transform:none;letter-spacing:0;font-weight:600;font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid var(--line)}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.list>*+*{border-top:1px solid var(--line)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:10px}
+.item{display:flex;gap:14px;align-items:flex-start;padding:14px;position:relative}
+.item.focus{background:var(--sel-dim);box-shadow:inset 3px 0 0 var(--sel)}  /* the next step */
+/* row icon: a tile tinted in the status colour, with a small badge (check, !, x) so the state doesn't rest on colour */
+.tile{position:relative;width:38px;height:38px;border-radius:var(--r-in);display:grid;place-items:center;flex:none;background:var(--key);color:var(--dim)}
+.tile>svg{width:21px;height:21px}
+.tile.ok{background:var(--ok-dim);color:var(--ok)}
+.tile.warn{background:var(--warn-dim);color:var(--warn)}
+.tile.fail{background:var(--bad-dim);color:#ff8f88}
+.badge{position:absolute;right:-5px;bottom:-5px;width:17px;height:17px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--panel);color:#fff}
+.item.focus .badge{border-color:var(--sel-dim)}
+.badge svg{width:9px;height:9px;stroke-width:3.5}
+.tile.ok .badge{background:var(--ok)} .tile.warn .badge{background:var(--warn);color:#2a1a02} .tile.fail .badge{background:var(--bad)}
 .ic{display:inline-flex;flex:none;line-height:0} .ic svg{width:16px;height:16px}
-.st-ok{color:#3fb950} .st-warn{color:#e3b341} .st-fail{color:#ff7b72} .st-info{color:var(--dim)}
+.st-ok{color:var(--ok)} .st-warn{color:var(--warn)} .st-fail{color:#ff8f88} .st-info{color:var(--dim)}
 .body{flex:1;min-width:0}
 .title{font-weight:600}
-.title small{color:var(--dim);font-weight:400;margin-left:6px}
+.title small{color:var(--dim);font-weight:500;margin-left:8px;font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid var(--line)}
 .detail{color:var(--dim);margin-top:2px}
-.hint{color:#e3b341;margin-top:6px;font-size:14px}
+.hint{color:var(--warn);margin-top:6px;font-size:14px}
 .sub{margin-top:8px;display:grid;gap:4px}
 .sub div{display:flex;gap:8px;align-items:center;font-size:14px}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .actions:empty{display:none}
-.pw{font-family:ui-monospace,Consolas,monospace;background:var(--panel2);padding:1px 6px;border-radius:6px}
+.pw{font-family:ui-monospace,Consolas,monospace;background:var(--key);padding:1px 6px;border-radius:5px}
+button.link{padding:2px 8px;font-size:13px;vertical-align:middle;margin-left:4px}
+button.link svg{width:14px;height:14px}
+/* phones: the QR code and how to use it */
 .phones{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start}
 .qr{background:#fff;border-radius:var(--r-in);padding:6px;line-height:0}
 /* 300 px: the code has the app icon in the middle (error correction H, so 41 x 41 modules); at 260 px a blurry
@@ -78,19 +96,27 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)
 .qr svg{width:300px;height:300px}
 .url{font-size:18px;font-weight:600;margin:2px 0 8px;word-break:break-all}
 ol{margin:6px 0 0;padding-left:20px;color:var(--dim)} ol li{margin:3px 0}
-details{margin-top:10px} summary{cursor:pointer;color:var(--dim);list-style:none;display:flex;align-items:center;gap:6px}
-summary::-webkit-details-marker{display:none}
+details summary{cursor:pointer;color:var(--dim);list-style:none;display:flex;align-items:center;gap:6px}
+details summary::-webkit-details-marker{display:none}
 summary .ic svg{transition:transform .15s} details[open]>summary .ic svg{transform:rotate(90deg)}
+.card details{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 details .qr{display:inline-block;margin-top:8px}
 details .qr svg{width:260px;height:260px}
-.seen{margin-top:12px;font-size:14px;display:grid;gap:4px}
+.seen{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:14px;display:grid;gap:5px}
+.seen b{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);font-weight:600}
 .seen div{display:flex;align-items:center;gap:8px}
 .ptitle{display:flex;align-items:center;gap:8px}
 .ptitle .ic svg{width:18px;height:18px;color:var(--dim)}
-a.pwt{display:inline-flex;align-items:center;gap:4px;vertical-align:middle} a.pwt svg{width:15px;height:15px}
 .muted{color:var(--dim)}
 .small{font-size:13px}
-.err{color:#ff8a8d}
+.err{color:#ff8f88}
+/* confirmations: an in-window sheet, like the app's, instead of the browser's own confirm() box */
+.scrim{position:fixed;inset:0;background:#000a;z-index:20;display:none;align-items:center;justify-content:center;padding:16px}
+.scrim.show{display:flex}
+.sheet{width:100%;max-width:440px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;box-shadow:0 20px 50px -10px #000}
+.sheet h3{margin:0 0 6px;font-size:17px}
+.sheet p{margin:0 0 16px;color:var(--dim);white-space:pre-line}
+.sheet .btns{display:flex;justify-content:flex-end;gap:8px}
 @media (max-width:620px){.phones{grid-template-columns:1fr}.qr svg{width:100%;height:auto}}
 </style>
 </head>
@@ -105,6 +131,8 @@ a.pwt{display:inline-flex;align-items:center;gap:4px;vertical-align:middle} a.pw
   <div id="banner"></div>
   <div id="content"><div class="card muted">Checking this PC...</div></div>
 </main>
+<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="askT"><h3 id="askT"></h3><p id="askP"></p>
+  <div class="btns"><button id="askNo">Cancel</button><button class="primary" id="askOk">OK</button></div></div></div>
 <script>
 const TOKEN = new URLSearchParams(location.search).get("t") || "";
 const $ = id => document.getElementById(id);
@@ -165,8 +193,23 @@ async function load(fresh) {
   }
 }
 
-async function act(name, confirmText) {
-  if (confirmText && !confirm(confirmText)) return;
+// In-window confirmation (the app's style). Resolves true for the OK button.
+function ask(title, text, okLabel, danger) {
+  return new Promise(done => {
+    const sc = $("scrim"), ok = $("askOk"), no = $("askNo");
+    $("askT").textContent = title; $("askP").textContent = text;
+    ok.textContent = okLabel; ok.className = danger ? "danger" : "primary";
+    const close = v => { sc.classList.remove("show"); document.removeEventListener("keydown", key); done(v); };
+    const key = e => { if (e.key === "Escape") close(false); };
+    ok.onclick = () => close(true); no.onclick = () => close(false);
+    sc.onclick = e => { if (e.target === sc) close(false); };
+    document.addEventListener("keydown", key);
+    sc.classList.add("show"); no.focus();
+  });
+}
+
+async function act(name, confirmText, label) {
+  if (confirmText && !await ask(label ? label + "?" : "Are you sure?", confirmText, label || "OK", name === "uninstall")) return;
   try { await api("/api/action", {name}); }
   catch (e) { renderJob({name: "Couldn't start", running: false, ok: false, error: e.message, lines: []}); return; }
   watchJob();
@@ -207,12 +250,13 @@ const STATE_WORD = {ok: "OK", warn: "Needs attention", fail: "Not working", info
 function card(id, state, title, detail, opts = {}) {
   const tile = `<div class="tile ${state}" title="${STATE_WORD[state]}">${ICON[opts.icon || CARD_ICON[id]] || ""}`
              + (BADGE[state] ? `<span class="badge">${ICON[BADGE[state]]}</span>` : "") + `</div>`;
-  return `<div class="card" id="c-${id}"><div class="row">${tile}<div class="body">
-    <div class="title">${title}${opts.tag ? `<small>${esc(opts.tag)}</small>` : ""}</div>
+  // a row in a grouped list (render() wraps them)
+  return `<div class="item" id="c-${id}">${tile}<div class="body">
+    <div class="title">${title}</div>
     ${detail ? `<div class="detail">${detail}</div>` : ""}
     ${(opts.hints || []).map(h => `<div class="hint">${h}</div>`).join("")}
     ${opts.sub ? `<div class="sub">${opts.sub}</div>` : ""}
-    <div class="actions">${opts.actions || ""}</div></div></div></div>`;
+    <div class="actions">${opts.actions || ""}</div></div></div>`;
 }
 const subline = (state, text, icon) => `<div><span class="ic st-${state}">${ICON[icon]}</span><span>${text}</span></div>`;
 const obsClosing = () => S.obs.running ? " OBS closes for a moment and opens again; don't do this during a live stream." : "";
@@ -231,7 +275,7 @@ function cards() {
 
   out.ws = ws.enabled
     ? card("ws", ws.auth ? "ok" : "warn", "OBS remote control",
-        `On, port ${ws.port}.` + (S.password ? ` Password: <span class="pw">${showPw ? esc(S.password) : "&bull;&bull;&bull;&bull;&bull;&bull;"}</span> <a href="#" id="pwt" class="pwt">${showPw ? ICON.eyeOff : ICON.eye}${showPw ? "hide" : "show"}</a>` : ""),
+        `On, port ${ws.port}.` + (S.password ? ` Password: <span class="pw">${showPw ? esc(S.password) : "&bull;&bull;&bull;&bull;&bull;&bull;"}</span><button id="pwt" class="link" aria-pressed="${showPw}">${showPw ? ICON.eyeOff : ICON.eye}${showPw ? "Hide" : "Show"}</button>` : ""),
         {hints: ws.auth ? [] : ["It has no password, so anyone on this network could control OBS. Set one in OBS: Tools > WebSocket Server Settings."]})
     : card("ws", "warn", "OBS remote control", (ws.config ? "OBS's WebSocket server is off." : "OBS's WebSocket server isn't set up yet.") + " Phones need it to control OBS.",
         {actions: btn("ws_on", o.running ? "Turn it on (closes and reopens OBS)" : "Turn it on", "primary", o.running ? "OBS will close and open again." + obsClosing() : "")});
@@ -287,6 +331,7 @@ function phonesCard(ready) {
   const seen = S.phones.length
     ? `<div class="seen">${S.phones.slice(0, 6).map(p => `<div><span class="ic st-${p.ago < 120 ? "ok" : "info"}">${ICON[p.tailscale || p.name ? "globe" : "phone"]}</span>${esc(p.name ? p.name + " (via Tailscale)" : p.tailscale ? "A phone via Tailscale" : p.here ? "A browser on this PC" : p.ip)} <span class="muted">${ago(p.ago)}</span></div>`).join("")}</div>`
     : `<div class="seen muted">No phone has used it in the last hour.</div>`;
+  const seenBlock = seen.replace('<div class="seen">', '<div class="seen"><b>Used in the last hour</b>');
   return `<div class="card" id="c-phones"><div class="phones">
     <div class="qr"${ready ? "" : ' style="opacity:.3"'}>${main.svg}</div>
     <div>
@@ -297,7 +342,7 @@ function phonesCard(ready) {
       <ol class="small"><li>iPhone: Safari's Share button &gt; <b>Add to Home Screen</b>.</li><li>Android: Chrome's &#8942; menu &gt; <b>Add to Home screen</b>.</li></ol>
       ${S.password ? `<div class="hint small">The code contains the OBS password: only show it to people who may control OBS.</div>` : ""}
       ${S.lan[0] && S.lan[0].dhcp ? `<div class="muted small" style="margin-top:6px">Tip: give this PC a fixed IP address (${esc(S.lan[0].ip)}) in your router${S.lan[0].gateway ? ` (<a href="http://${esc(S.lan[0].gateway)}/" target="_blank" rel="noopener">${esc(S.lan[0].gateway)}</a>)` : ""}, so the code never changes. It's often called a DHCP reservation.</div>` : ""}
-      ${seen}
+      ${seenBlock}
     </div></div>
     ${more.map(c => `<details><summary>${ic("chevron")}${c.folded ? "Code for phones in another tailnet (this PC's Tailscale address)" : esc(c.label)}: ${esc(c.url)}</summary><div class="qr">${c.svg}</div></details>`).join("")}
   </div>`;
@@ -314,22 +359,24 @@ function render() {
   const ready = !next;
   $("banner").innerHTML = ready
     ? `<div class="banner ok">${ICON.checkCircle}<div class="t"><b>Ready</b>Phones can scan the code below. Everything else here is optional.</div></div>`
-    : `<div class="banner next">${ICON.nextCircle}<div class="t"><b>Next: ${esc(next[2])}</b>Work down the list: the outlined step is next. Then scan the code with each phone.</div></div>`;
-  const setup = [c.ws, c.firewall, c.server].join("");
-  const optional = [c.ptz, c.ts].join("");
+    : `<div class="banner next">${ICON.nextCircle}<div class="t"><b>Next: ${esc(next[2])}</b>Work down the list: the highlighted step is next. Then scan the code with each phone.</div></div>`;
+  const setup = `<div class="list">${c.obs}${c.ws}${c.firewall}${c.server}</div>`;
+  const optional = `<div class="list">${c.ptz}${c.ts}</div>`;
   $("content").innerHTML = ready
-    ? `${phonesCard(true)}<h2>Status</h2>${c.obs}${setup}<h2>Optional</h2>${optional}${moreCard()}`
-    : `<h2>Set up</h2>${c.obs}${setup}<h2>Optional</h2>${optional}<h2>Phones</h2>${phonesCard(false)}${moreCard()}`;
-  if (next) { const el = $("c-" + next[0]); if (el) el.classList.add("focus"); }
+    ? `<h2>Phones</h2>${phonesCard(true)}<h2>Status</h2>${setup}<h2>Optional</h2>${optional}${moreCard()}`
+    : `<h2>Set up</h2>${setup}<h2>Optional</h2>${optional}<h2>Phones</h2>${phonesCard(false)}${moreCard()}`;
+  // one white button at a time: while setting up, only the next step's own button is the main one
+  if (next) { const el = $("c-" + next[0]); if (el) el.classList.add("focus");
+    document.querySelectorAll(".item:not(.focus) button.primary").forEach(b => b.classList.remove("primary")); }
   document.querySelectorAll("button[data-act]").forEach(b => {
-    b.onclick = () => act(b.dataset.act, b.dataset.confirm);
+    b.onclick = () => act(b.dataset.act, b.dataset.confirm, b.textContent.trim());
     b.disabled = !!S.job.running;
   });
-  const pwt = $("pwt"); if (pwt) pwt.onclick = e => { e.preventDefault(); showPw = !showPw; render(); };
+  const pwt = $("pwt"); if (pwt) pwt.onclick = () => { showPw = !showPw; render(); $("pwt")?.focus(); };
 }
 
 function moreCard() {
-  return `<details class="card" style="margin-top:22px"><summary>${ic("chevron")}More</summary>
+  return `<details class="card" style="margin-top:22px"><summary>${ic("chevron")}More: folders and uninstall</summary>
     <div class="small muted" style="margin-top:8px;display:grid;gap:4px"><span class="ptitle">${ic("folder")}Program: ${esc(S.folder)}</span><span class="ptitle">${ic("folder")}Logs and settings: ${esc(S.data)}</span></div>
     <div class="actions">${btn("uninstall", "Uninstall OBS Remote", "danger", "Stop OBS Remote and remove it from startup, the Start menu, the firewall and Tailscale? Phones will stop working. The folder itself stays.")}</div>
   </details>`;
