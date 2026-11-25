@@ -239,6 +239,117 @@ def obs_exe():
     return None
 
 
+# ---- OBS stuck closing ----
+# OBS 32 can sit for minutes after its window has gone, still in the process list, while obs-websocket waits for
+# clients that never finish closing (seen 2026-11-25: 4½ minutes). A plain "is obs64.exe running?" then says
+# running, so the phone couldn't offer Start OBS. obs_state() tells the cases apart:
+#   starting: the process is less than a minute old (no window and no websocket yet is normal)
+#   closing:  every OBS process is older than that, has no visible window, and nothing listens on the websocket
+#             port. The port check keeps an OBS minimised to the tray (no window, but answering) from counting.
+STARTUP_GRACE = 60   # seconds
+FORCE_AFTER = 15     # seconds stuck before the phone may end it: a normal close is never cut short
+_stuck_since = {}    # pid -> when it was first seen stuck
+
+
+def _obs_pids():
+    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq obs64.exe", "/NH", "/FO", "CSV"], capture_output=True,
+                         text=True, timeout=10, creationflags=NO_WINDOW).stdout
+    pids = []
+    for line in out.splitlines():
+        f = [x.strip('"') for x in line.split('","')]
+        if len(f) > 1 and f[0].lower() == "obs64.exe" and f[1].isdigit():
+            pids.append(int(f[1]))
+    return pids
+
+
+def _visible_window_pids():
+    import ctypes
+    from ctypes import wintypes
+    user32, pids = ctypes.windll.user32, set()
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def each(hwnd, _):
+        if user32.IsWindowVisible(hwnd):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            pids.add(pid.value)
+        return True
+    user32.EnumWindows(each, 0)
+    return pids
+
+
+def _process_age(pid):
+    """Seconds since the process started, or None."""
+    import ctypes
+    from ctypes import wintypes
+    k = ctypes.windll.kernel32
+    h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h:
+        return None
+    try:
+        c, e, kt, ut = (wintypes.FILETIME() for _ in range(4))
+        if not k.GetProcessTimes(h, ctypes.byref(c), ctypes.byref(e), ctypes.byref(kt), ctypes.byref(ut)):
+            return None
+        started = ((c.dwHighDateTime << 32) | c.dwLowDateTime) / 1e7 - 11644473600  # FILETIME -> Unix time
+        return time.time() - started
+    finally:
+        k.CloseHandle(h)
+
+
+def _websocket_listening():
+    try:
+        with open(os.path.join(os.environ.get("APPDATA", ""), "obs-studio", "plugin_config", "obs-websocket",
+                               "config.json"), encoding="utf-8") as f:
+            port = int(json.load(f).get("server_port") or 4455)
+    except (OSError, ValueError):
+        port = 4455
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
+        return True
+    except OSError:
+        return False
+
+
+def obs_state():
+    """{"running": True/False/None, "starting": bool, "closing": bool, "stuckFor": seconds, "pids": [...]}"""
+    if os.name != "nt":
+        return {"running": None}
+    try:
+        pids = _obs_pids()
+    except (OSError, subprocess.SubprocessError):
+        return {"running": None}
+    if not pids:
+        _stuck_since.clear()
+        return {"running": False, "starting": False, "closing": False, "stuckFor": 0, "pids": []}
+    try:
+        ages = {p: _process_age(p) for p in pids}
+        starting = any(a is not None and a < STARTUP_GRACE for a in ages.values())
+        stuck = [] if starting or _websocket_listening() else [p for p in pids if p not in _visible_window_pids()]
+    except (OSError, AttributeError):  # no ctypes/user32 access: fall back to the old answer
+        starting, stuck = False, []
+    closing = bool(stuck) and len(stuck) == len(pids)
+    now = time.time()
+    for p in list(_stuck_since):
+        if not closing or p not in stuck:
+            del _stuck_since[p]
+    for p in stuck if closing else ():
+        _stuck_since.setdefault(p, now)
+    stuck_for = int(now - min(_stuck_since.values())) if closing else 0
+    return {"running": True, "starting": starting, "closing": closing, "stuckFor": stuck_for, "pids": pids}
+
+
+def end_stuck_obs(st):
+    """Force-end OBS processes that obs_state() found stuck closing, and wait until they're gone."""
+    for pid in st["pids"]:
+        subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, timeout=10, creationflags=NO_WINDOW)
+    for _ in range(40):
+        if not _obs_pids():
+            _stuck_since.clear()
+            return True
+        time.sleep(0.25)
+    return False
+
+
 def clear_crash_markers():
     """OBS 32 writes %APPDATA%/obs-studio/.sentinel/run_<id> while it runs and deletes it on a clean exit. A file
     left there makes the next start ask "OBS Studio Crash Detected - Run in Safe Mode?", and waits for a click
@@ -358,7 +469,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send_json(200, {"hidden": mixer_hidden((q.get("collection") or [""])[0])})
         if self.path.split("?")[0] == "/api/obs":
-            return self.send_json(200, {"running": obs_running(), "canStart": bool(obs_exe())})
+            st = obs_state()
+            st.pop("pids", None)
+            return self.send_json(200, {**st, "canStart": bool(obs_exe()), "forceAfter": FORCE_AFTER})
         if self.path.split("?")[0] == "/api/listen-state":
             dev = listen.STATE["device"]
             if not dev and os.name == "nt":
@@ -407,8 +520,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # Starting OBS needs the same key as Listen: proof the phone knows OBS's websocket password.
             if not listen.key_ok(self.headers.get("X-OBS-Remote-Key")):
                 return self.send_json(403, {"error": "Wrong OBS websocket password"})
-            if obs_running():
-                return self.send_json(409, {"error": "OBS is already running"})
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                force = bool(json.loads(self.rfile.read(n) or b"{}").get("force")) if n else False
+            except (ValueError, AttributeError):
+                force = False
+            st = obs_state()
+            if st["running"]:
+                # Only a copy that is stuck closing (no window, websocket shut, long enough) may be ended from here.
+                # A working OBS is never killed.
+                if not (force and st.get("closing") and st.get("stuckFor", 0) >= FORCE_AFTER):
+                    return self.send_json(409, {"error": "OBS is already running"})
+                if not end_stuck_obs(st):
+                    return self.send_json(500, {"error": "The stuck copy of OBS wouldn't close"})
             try:
                 start_obs()
             except OSError as e:

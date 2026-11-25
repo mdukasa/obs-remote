@@ -25,10 +25,16 @@ phone browser ──http :8765──▶ server.py (the page, plus a few /api/ ca
 ## Pictures
 Monitors call `GetSourceScreenshot` back to back, with one request in flight per monitor, so slow Wi-Fi lowers the frame rate instead of adding delay.
 In testing a frame cost OBS about 8 ms, and 25 fps caused no skipped render frames.
-The Live tab uses 480 px JPEGs; the Camera tab uses 640 px.
+The Switcher's preview and program use 480 px JPEGs; the Camera tab uses 640 px. The rate follows Settings → *Picture* (25, 10 or 2 fps), and nothing is fetched on the Audio tab.
+
+**Scene keys** show 192 px screenshots of each scene. They're taken one at a time while the Switcher is open, and again just after a scene is tapped. The program and preview keys reuse the monitor pictures (at most twice a second) instead of asking again.
+
+**Favourite scenes** are saved in OBS with `SetPersistentData` (profile realm, slot `obs-remote.favourites`, `{collection name: [scene, …]}`), so every phone shows the same keys. With none starred, every scene is a key. Renaming a scene collection starts it with no favourites.
+
+**CUT** sets OBS's Cut transition (`GetSceneTransitionList`, kind `cut_transition`), sends `TriggerStudioModeTransition`, then puts the chosen transition back. **TAKE** uses the chosen transition as it is.
 
 ## Audio meters
-The page subscribes to `InputVolumeMeters` (about 20 per second, about 9 KB/s) once, at login, and ignores them while the Live tab isn't on screen.
+The page subscribes to `InputVolumeMeters` (about 20 per second, about 9 KB/s) once, at login, and ignores them while the Audio tab isn't on screen.
 It never changes subscriptions with op 3 (Reidentify). obs-websocket 5.x (checked on 5.7.4) counts meter listeners with a plain counter.
 A Reidentify that's processed while the same connection closes is subtracted twice, which happens when a phone locks right after hiding the page.
 The count then stays one too low. Once it's low enough, OBS stops sending levels to *every* client, including OBS Remote on other phones, until OBS restarts.
@@ -37,22 +43,25 @@ Each channel comes as `[magnitude, peak, input peak]`. For a muted source obs-we
 Inputs are listed when their type can have audio. Browser sources are only listed when *Control audio via OBS* (`reroute_audio`) is ticked, as in OBS's own mixer.
 
 ## Start OBS from the phone
-When the page can't connect to OBS, it asks `GET /api/obs` (`{running, canStart}`, from `tasklist`) and shows a banner:
+When the page can't connect to OBS, it asks `GET /api/obs` every 3 s (`{running, starting, closing, stuckFor, forceAfter, canStart}`, from `server.obs_state()`) and shows a banner:
 - *OBS is closed on the PC*, with **Start OBS**, when `obs64.exe` isn't running.
-- *OBS isn't answering*, when it runs but its WebSocket server is off.
+- *Starting OBS…*, when an `obs64.exe` is less than a minute old (`GetProcessTimes`).
+- *OBS is closing…*, then after 15 s *OBS is stuck closing* with **Start OBS**, when every `obs64.exe` is older than that, none has a visible window (`EnumWindows`) and nothing listens on OBS's WebSocket port (from obs-websocket's `config.json`). OBS 32.2.2 has been seen to sit like that for 4½ minutes after its window closed, waiting for WebSocket clients to finish closing. The port check keeps an OBS minimised to the tray (no window, still answering) from counting.
+- *OBS isn't answering*, when it runs with a window but its WebSocket server is off.
 
 **Start OBS** sends `POST /api/obs/start` with `X-OBS-Remote: 1` and the same `X-OBS-Remote-Key` as Listen, so only phones that know the OBS password can start it.
+For a stuck copy the phone asks first and sends `{"force": true}`. The server checks again that every OBS process is still stuck, for at least 15 s, ends them with `taskkill /F`, waits until they've gone, and then starts OBS as usual. A working OBS is never ended this way.
 The server finds `obs64.exe` from OBS's installer entry (`HKLM\SOFTWARE\OBS Studio`) or the usual folder. Before starting it, it deletes leftover `%APPDATA%\obs-studio\.sentinel\run_*` files. OBS 32 writes one per run and removes it on a clean exit; one left over makes the next start stop at *OBS Studio Crash Detected… Run in Safe Mode?* until someone clicks. (OBS 32 ignores the old `--disable-shutdown-check`, which is still passed for older versions.)
-It starts OBS from its own folder and refuses (409) if OBS is already running.
+It starts OBS from its own folder and refuses (409) if OBS is already running (and not stuck).
 OBS opens on the desktop of whoever is signed in, because the server runs in that session.
 
 ## Going live on YouTube (`youtube.py`, `youtube.ps1`)
 When OBS is signed in to a YouTube account (no stream key), it won't stream until a broadcast is set up in its *YouTube Broadcast Setup* dialog on the PC, and obs-websocket has no request for that.
-- **Broadcast already set up** (someone used *Manage Broadcast* on the PC to create one or pick a scheduled one): **Start stream** just asks "Start the stream?" and sends `StartStream`, which goes live to it.
+- **Broadcast already set up** (someone used *Manage Broadcast* on the PC to create one or pick a scheduled one): **Go live** just asks "Start the stream?" and sends `StartStream`, which goes live to it.
   OBS doesn't report this state, so a watcher thread in `youtube.py` keeps an obs-websocket connection and polls `GetStreamServiceSettings` every 3 s. Setting up a broadcast puts a new `broadcast_id` there; the id of the last stream is remembered (`youtube_state.json` in the data folder).
   A different id that hasn't streamed yet = a broadcast is waiting (`GET /api/youtube` → `{ready}`).
   OBS forgets a set-up broadcast when it restarts, so when OBS's process id changes the watcher counts the current id as used.
-- **Detection:** the stream service is YouTube, profile parameter `Auth/Type` is YouTube and `YouTube/ChannelName` is set. Otherwise **Start stream** just sends `StartStream`.
+- **Detection:** the stream service is YouTube, profile parameter `Auth/Type` is YouTube and `YouTube/ChannelName` is set. Otherwise **Go live** just sends `StartStream`.
   Not "no stream key": after a broadcast OBS keeps that broadcast's key (and `broadcast_id`) in the stream settings. If OBS turns out to have no *Manage Broadcast* button, `youtube.ps1` answers `noAccount` and the phone just starts the stream.
   If OBS's *No Broadcast Configured* message is open (someone pressed Start Streaming without a broadcast), `youtube.ps1` uses its *Manage Broadcast* button.
 - **The form** starts from OBS's remembered settings: profile parameters in category `YouTube` (`Title`, `Description`, `Privacy` public/unlisted/private, `CategoryID` YouTube's numbers, `Latency` normal/low/ultraLow, `MadeForKids`, `DVR`, `ChannelName`).
@@ -68,7 +77,7 @@ When OBS is signed in to a YouTube account (no stream key), it won't stream unti
 - `youtube.ps1 -DryRun` (or `dryRun: true` in the request) fills in and checks the dialog, then cancels it, for testing without going live.
 
 ## Listen on the phone (`listen.py`)
-The Audio section always has a **Listen** button, and each source a headphone button. Nothing plays, and the server records nothing, until someone taps **Listen**.
+The Audio tab always has a **Listen** button, and each source a headphone button. Nothing plays, and the server records nothing, until someone taps **Listen**.
 obs-websocket can't send sound, so the server on the OBS PC records it instead:
 - **What you hear:** OBS's audio monitoring device (OBS *Settings → Audio → Advanced → Monitoring Device*), read with `GetProfileParameter`.
   Only sources set to *Monitor Only* or *Monitor and Output* play there.
@@ -98,8 +107,9 @@ Requests used: `ptz_list_devices`, `ptz_get_state`, `ptz_move`, `ptz_stop`, `ptz
   The app reads those caps with `GetSourceFilterList` and scales into them, so the whole Speed slider is useful.
 - **Joystick:** speed comes from how far the knob is pushed. Direction is stretched to a square, so diagonals get full speed on the leading axis.
   Pushes within about 11° of straight snap to a pure pan or tilt.
-- **Picture source:** the PTZ filter's source is used if it's producing video (`GetSourceActive`). Otherwise the app uses the first active video input whose name starts with it, unless overridden in Settings. ON AIR is shown if either source is in the program.
-- **Names and order:** display names and picture overrides are stored in OBS with `SetPersistentData` (profile realm, slot `obs-remote.cameras`, `{names:{source:name}, pictures:{source:input}}`), so all phones share them. Devices are sorted by display name with numeric collation.
+- **Picture source:** the PTZ filter's source is used if it's producing video (`GetSourceActive`). Otherwise the app uses the first active video input whose name starts with it. ON AIR is shown if either source is in the program.
+- **Names and order:** cameras show their OBS source names, sorted with numeric collation. Names and picture overrides saved by versions before 1.12 (`SetPersistentData`, profile realm, slot `obs-remote.cameras`, `{names:{source:name}, pictures:{source:input}}`) are still honoured, but the app no longer edits them.
+- **Move and Presets** are two faces of one panel under the picture; the phone remembers the last one (`localStorage`). The camera name pill follows a swipe on the picture part of the way, then finishes the slide (or springs back) when the finger lifts.
 - **Refresh camera:** reconnects the picture source and the PTZ link. The picture source depends on its kind:
   - NDI: `ndi_source_name` is set to empty and then back, which rebuilds the receiver.
   - Media and VLC: restart.
@@ -253,7 +263,7 @@ To test one on a single PC, run `py server.py update v1.3.0-beta1`.
 - Downloads go through Python's TLS first. If certificate verification fails, they fall back to Windows' `curl.exe`, which uses the Windows certificate store.
   This was seen with GitHub's newer Let's Encrypt chain, which Python couldn't complete.
 - `python server.py update [tag]` does the same from the command line and exits. Run `Install.bat` afterwards to restart the server.
-- The page checks `/api/version` when it loads, when Settings opens and every 6 hours. When the server reports an update, it shows a dot on ⚙.
+- The page checks `/api/version` when it loads, when Settings opens and every 6 hours. When the server reports an update, it shows a dot on ⋮ and on its Settings item.
 - Before 1.2.0, copies followed the `VERSION` file on `main` instead. A 1.1.x copy therefore moves to 1.2.0 when `main` says 1.2.0, and follows releases from then on.
 
 ## README screenshots

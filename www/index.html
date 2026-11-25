@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#0e1116">
+<meta name="theme-color" content="#17181c">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -13,348 +13,413 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>OBS Remote</title>
 <style>
+/* Look: the gear people already know (docs/redesign-prototype.html has the reasoning).
+   - OBS-like neutral greys; colour only means something: red = on air (program, LIVE), green = preview,
+     blue = selected / switched on, amber = needs attention (muted, update). Stop controls are not red.
+   - one key for everything you press (scenes, presets): picture on top, name below, lit border for its state.
+   - the system font, as OBS uses. Every icon comes with a word, except ⋮, back and star. */
 :root{
-  --bg:#0e1116; --panel:#161b22; --panel2:#1f2630; --line:#2a323d; --text:#e6edf3; --dim:#8b949e;
-  --blue:#2f81f7; --red:#e5484d; --green:#2ea043; --amber:#d29922;
-  --r:14px; --gap:10px;
+  --bg:#17181c; --panel:#1f2025; --key:#2a2b31; --key-hi:#353740; --line:#393b44; --text:#ececee; --dim:#9a9ca5;
+  --sel:#4f7dd8; --sel-dim:#13284a; --sel-text:#a9c4ff; --pgm:#e5372f; --pgm-dim:#3a1715; --pvw:#2fbf57; --pvw-dim:#132a1a; --warn:#e9a23b;
+  --gap:8px; --hh:56px;
   --safe-b:env(safe-area-inset-bottom,0px); --safe-t:env(safe-area-inset-top,0px);
 }
 [hidden]{display:none!important}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overscroll-behavior:none}
-body{padding:calc(var(--safe-t) + 0px) 0 calc(68px + var(--safe-b))}
-button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none}
-button:active{filter:brightness(1.3)}
+body{padding:var(--safe-t) 0 calc(66px + var(--safe-b))}
+button{font:inherit;color:inherit;background:var(--key);border:1px solid var(--line);border-radius:8px;padding:12px;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+button:active{background:var(--key-hi)}
 button:disabled{opacity:.4}
-.wrap{max-width:560px;margin:0 auto;padding:0 12px}
-header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-header .wrap{display:flex;align-items:center;gap:8px;height:52px}
-.dot{width:10px;height:10px;border-radius:50%;background:var(--red);flex:none}
-.dot.ok{background:var(--green)} .dot.wait{background:var(--amber)}
-.title{font-weight:650;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pill{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;background:var(--panel2);border:1px solid var(--line)}
-.pill.live{background:var(--red);border-color:var(--red);color:#fff}
-.pill.rec{background:#7a1d20;border-color:var(--red);color:#fff}
-.pill .b{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.7}
-.icon-btn{padding:8px 10px;border-radius:10px;background:transparent;border:none;font-size:20px;line-height:1;display:flex;color:var(--dim)}
-.icon-btn svg{width:22px;height:22px}
-/* icons inside buttons and labels: sized to the text, a little gap before the words */
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--sel);outline-offset:2px}
+.wrap{max-width:560px;margin:0 auto;padding:0 14px}
 .ic{display:inline-flex;flex:none;font-style:normal;line-height:0}
-.ic svg,.lbl svg{width:1.2em;height:1.2em;flex:none}
-.lbl{display:inline-flex;align-items:center;justify-content:center;gap:.45em}
-.icon-btn.badge{position:relative}.icon-btn.badge::after{content:"";position:absolute;top:6px;right:6px;width:9px;height:9px;border-radius:50%;background:var(--amber)}
-.upd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-bottom:14px}
-.upd span{font-size:13px;color:var(--dim)}.upd b{color:var(--text,inherit)}.upd button{padding:8px 12px;white-space:nowrap}
-section{margin:12px 0}
-h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:16px 2px 8px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
-h2 button{font-size:12px;padding:4px 8px;text-transform:none;letter-spacing:0}
-/* the picture stays pinned under the header while the page scrolls (presets, scenes, audio) */
-.stick{position:sticky;top:52px;z-index:4;background:var(--bg);margin:0 -12px;padding:var(--gap) 12px;box-shadow:0 10px 12px -12px #000}
-.stick .mon{max-height:42vh;max-height:42dvh}
-.stick .camview{margin-top:0}
-#camMon{touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
-#camMon img{-webkit-user-drag:none;pointer-events:none}
-#camMon{will-change:transform}
-#tabCam .stick{overflow:hidden}  /* the picture slides within its strip */
-.peek{position:absolute;top:50%;transform:translateY(-50%);font-weight:700;font-size:15px;color:var(--text);opacity:0;pointer-events:none;white-space:nowrap}
-.peek.r{right:24px}.peek.l{left:24px}  /* sideways swipes switch camera (see selectCam), up/down still scrolls */
-/* hints that the picture swipes: an arrow each side (also tappable) and a dot per camera under it */
-.camnav{position:absolute;top:18%;bottom:18%;width:52px;z-index:2;padding:0;border:0;border-radius:0;color:#fff;opacity:.9;
-  display:flex;align-items:center;justify-content:center;background:none;-webkit-tap-highlight-color:transparent;
-  transition:opacity .6s,transform .15s}
-.camnav.l{left:-14px}.camnav.r{right:-14px}
-.camnav svg{width:28px;height:28px;filter:drop-shadow(0 0 2px #000a) drop-shadow(0 1px 1px #0008)}  /* just a thin outline: readable on bright pictures */
-.camview.idle .camnav{opacity:.28}  /* fade back after a few seconds untouched; any touch on the picture brings them back */
-.camnav:active{opacity:1;transform:scale(.85);transition:none}.camnav[hidden]{display:none}
+.ic svg{width:1.2em;height:1.2em}
+
+/* header: connection, collection, status tags, ⋮ */
+header{position:sticky;top:0;z-index:6;background:var(--bg);border-bottom:1px solid var(--line)}
+header .wrap{display:flex;align-items:center;gap:8px;height:var(--hh)}
+.conn{width:8px;height:8px;border-radius:50%;background:var(--pgm);flex:none}
+.conn.ok{background:var(--pvw)}.conn.wait{background:var(--warn)}
+.ttl{flex:1;min-width:0;display:flex;flex-direction:column}
+.ttl b{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ttl small{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Stream / Record: while off they're buttons that say what they do (Go live, Record); while on they turn into
+   red status with the timecode, as OBS's own Start/Stop Streaming does. Either way a tap opens the same sheet. */
+.tag{display:flex;align-items:center;gap:5px;padding:6px 9px;border-radius:7px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.2}
+.tag i{width:7px;height:7px;border-radius:50%;background:#fff;display:none}
+.tag .tic{display:none;line-height:0}.tag .tic svg{width:15px;height:15px}
+.tag.act{background:var(--key);border:1px solid var(--line);color:var(--text)}
+.tag.act .tic{display:inline-flex}
+.tag.on{background:var(--pgm);border:1px solid var(--pgm);color:#fff}.tag.on i{display:block}
+.tag.warn{background:transparent;border:1px solid var(--warn);color:var(--warn)}.tag.warn i{display:block;background:var(--warn)}
+@media (max-width:400px){.tag{padding:6px 7px;gap:4px}header .wrap{gap:6px}}
+@media (max-width:360px){.tag .lw{display:none}}  /* narrow phones: just the dot and the time */
+.icon-btn{padding:8px;border:0;background:transparent;color:var(--dim);display:flex;position:relative}
+.icon-btn:active{background:var(--key)}
+.icon-btn svg{width:22px;height:22px}
+.badge::after{content:"";position:absolute;top:5px;right:5px;width:8px;height:8px;border-radius:50%;background:var(--warn)}
+
+/* OBS closed / not answering (Start OBS: server.py /api/obs/start) */
+.down{display:flex;align-items:center;gap:12px;margin:12px 0 0;padding:12px;border-radius:10px;background:#2a1d0c;border:1px solid #9e6a03}
+.down span{flex:1;display:flex;flex-direction:column;gap:2px}
+.down small{font-size:12px;color:var(--dim)}
+.down button{flex:none;background:var(--text);border-color:var(--text);color:#141518;font-weight:700;padding:10px 14px;display:flex;align-items:center;gap:6px}
+.down button svg{width:18px;height:18px}
+
+/* section labels */
+h2{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);margin:16px 0 8px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px}
+h2 .h{text-transform:none;letter-spacing:0;font-weight:500}
+h2 .bs{display:flex;gap:6px}
+h2 button{font-size:12px;padding:5px 10px;text-transform:none;letter-spacing:0;color:var(--text);display:flex;align-items:center;gap:5px;font-weight:600}
+h2 button svg{width:14px;height:14px}
+h2 button.on{background:var(--sel);border-color:var(--sel);color:#fff}
+.empty{color:var(--dim);font-size:13px;padding:10px 2px}
+.keys>.empty{grid-column:1/-1}
+.note{font-size:12px;color:var(--dim);margin:12px 2px 0}
+
+/* the picture stays pinned under the header while the page scrolls */
+.stick{position:sticky;top:var(--hh);z-index:4;background:var(--bg);margin:0 -14px;padding:12px 14px 10px;box-shadow:0 10px 12px -12px #000}
+.stick .mon{max-height:40vh;max-height:40dvh}
 @media (max-height:500px){.stick{position:static;box-shadow:none}}  /* phone on its side: no room to pin it */
+
+/* monitors */
 .monitors{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
 .monitors.single{grid-template-columns:1fr}
-.mon{position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:16/9;border:2px solid var(--line)}
+.mon{position:relative;border-radius:6px;overflow:hidden;background:#000;aspect-ratio:16/9;outline:2px solid var(--line);outline-offset:-2px;margin:0 auto;width:100%}
 .mon img{width:100%;height:100%;object-fit:contain;display:block}
-.mon img:not([src]){visibility:hidden}  /* cleared picture (camera switched/offline): no broken-image icon */
-.mon .lab{position:absolute;left:6px;top:6px;font-size:11px;font-weight:700;padding:2px 6px;border-radius:6px;background:#000a}
-.mon .fps{position:absolute;right:6px;top:6px;font-size:10px;font-weight:600;padding:1px 5px;border-radius:5px;background:#000a;color:#fffb;font-variant-numeric:tabular-nums}
+.mon img:not([src]){visibility:hidden}
+.mon .lab{position:absolute;left:4px;top:4px;font-size:10px;font-weight:700;letter-spacing:.06em;padding:1px 5px;border-radius:3px;color:#fff;background:#000a}
+.mon.pgm{outline-color:var(--pgm)}.mon.pgm .lab{background:var(--pgm)}
+.mon.pvw{outline-color:var(--pvw)}.mon.pvw .lab{background:var(--pvw);color:#06210f}
+.mon .fps{font-size:9px;font-weight:600;padding:1px 4px;border-radius:3px;background:#000a;color:#fffc;font-variant-numeric:tabular-nums}
+.mon>.fps{position:absolute;right:4px;top:4px}
 .mon .fps:empty{display:none}
-.field select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px}
-.mon.pgm{border-color:var(--red)} .mon.pgm .lab{background:var(--red)}
-.mon.pvw{border-color:var(--green)} .mon.pvw .lab{background:var(--green)}
-.mon .name{position:absolute;left:6px;bottom:6px;right:6px;font-size:12px;font-weight:600;text-shadow:0 1px 3px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.take{display:grid;grid-template-columns:1fr;margin-top:var(--gap)}
-.take button{padding:14px;font-weight:700}
-#btnTake{background:var(--red);border-color:var(--red);color:#fff;font-size:17px}
-.take button{display:flex;flex-direction:column;align-items:center;gap:1px}
-.take button small{font-size:11px;font-weight:500;opacity:.75}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:var(--gap)}
-.scene{min-height:60px;font-weight:600;text-align:left;position:relative;padding:12px 12px 12px 14px;word-break:break-word}
-.scene.pgm{background:#3b1416;border-color:var(--red);box-shadow:inset 4px 0 0 var(--red)}
-.scene.pvw{background:#122a19;border-color:var(--green);box-shadow:inset 4px 0 0 var(--green)}
-.scene.pgm.pvw{box-shadow:inset 4px 0 0 var(--red),inset -4px 0 0 var(--green)}
-.outputs{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
-.outputs button{padding:14px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:2px}
-.outputs button small{font-weight:500;color:var(--dim);font-variant-numeric:tabular-nums}
-.outputs button.on{background:var(--red);border-color:var(--red);color:#fff}
-.outputs button.on small{color:#fffc}
-/* Advanced Scene Switcher on/off (only shown when OBS has the plugin) */
-.assrow{display:flex;align-items:center;gap:12px;margin-top:var(--gap);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
-.assrow[hidden]{display:none}
-.assrow>span{flex:1;font-weight:600;display:flex;flex-direction:column;gap:2px}
-.assrow small{font-size:12px;font-weight:500;color:var(--dim)}
-.assrow .asi svg{width:20px;height:20px;color:var(--dim)}
-#btnAss{position:relative;width:54px;height:32px;padding:0;border-radius:999px;flex:none;transition:background .15s}
-#btnAss span{position:absolute;left:3px;top:3px;width:24px;height:24px;border-radius:50%;background:#c9d1d9;transition:transform .15s}
-#btnAss.on{background:var(--green);border-color:var(--green)}
-#btnAss.on span{transform:translateX(22px);background:#fff}
-.stats{font-size:12px;color:var(--dim);margin-top:8px;display:flex;gap:14px;flex-wrap:wrap}
-.audio{display:flex;flex-direction:column;gap:8px}
-.arow{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 8px 8px 12px}
-.ainfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
-.atop{display:flex;align-items:baseline;gap:8px}
-.arow .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.arow .db{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
-.meter{display:flex;flex-direction:column;gap:2px}
-/* -60..0 dB, OBS colours: green to -20 dB, yellow to -9 dB, red above */
-.mbar{position:relative;height:6px;border-radius:3px;overflow:hidden;background:linear-gradient(to right,#2ea043 0 66.7%,#d29922 66.7% 85%,#e5484d 85%)}
-.mbar .cv{position:absolute;inset:0;background:#0d1117;transform-origin:right;transform:scaleX(1)}
-.mbar .hd{position:absolute;top:0;bottom:0;width:2px;margin-left:-2px;left:0;background:#fff;opacity:0}
-.meter.muted .mbar{filter:grayscale(1);opacity:.45}
-.meter.idle .mbar{opacity:.35}
-.arow button{min-width:88px;padding:9px}
-.arow button.muted{background:#3b1416;border-color:var(--red);color:#ffb3b5}
-.arow button[data-mute]{display:flex;align-items:center;justify-content:center;gap:6px}
-.arow button[data-mute] svg{width:18px;height:18px;flex:none}
-/* listen on the phone (Settings → Live tab → Listen) */
-.arow button.amon{min-width:0;width:44px;height:40px;flex:none;padding:0;display:flex;align-items:center;justify-content:center;color:var(--dim)}
-.arow button.amon svg{display:block;flex:none;width:20px;height:20px}
-.arow button.amon.on{background:#10273f;border-color:#2f81f7;color:#9ecbff}
-h2 .hbtns{display:flex;gap:6px}
-#btnListen{display:flex;align-items:center;gap:5px}
-#btnListen[hidden]{display:none}
-#btnListen svg{width:14px;height:14px}
-#btnListen.on{background:#2f81f7;border-color:#2f81f7;color:#fff}
+.mon .name{position:absolute;left:6px;bottom:3px;right:6px;font-size:11px;font-weight:600;text-shadow:0 1px 3px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.take{display:grid;grid-template-columns:72px 1fr;gap:var(--gap);margin-top:var(--gap)}
+.take button{padding:11px 8px;font-weight:700;letter-spacing:.04em}
+#btnTake{background:var(--text);border-color:var(--text);color:#141518;display:flex;align-items:center;justify-content:center;gap:10px}
+#btnTake:active{background:#cfcfd3}
+#btnTake svg{width:18px;height:18px}
+#btnTake small{font-weight:500;letter-spacing:0;opacity:.65;font-size:12px}
+
+/* keys: scenes and presets */
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gap)}
+@media (min-width:480px){.keys{grid-template-columns:repeat(4,1fr)}}
+.key{padding:0;overflow:hidden;display:flex;flex-direction:column;text-align:left;position:relative;border-width:2px;touch-action:pan-y;min-width:0}
+.key .th{aspect-ratio:16/9;background:#000 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:20px;font-weight:700;overflow:hidden}
+.key .th img{width:100%;height:100%;object-fit:cover;display:block;-webkit-user-drag:none;pointer-events:none}
+.key .th img:not([src]){visibility:hidden}
+.key .kn{padding:6px 7px 7px;font-size:12px;font-weight:600;line-height:1.2;min-height:2.6em;word-break:break-word}
+.key.pgm{border-color:var(--pgm);background:var(--pgm-dim)}
+.key.pvw{border-color:var(--pvw);background:var(--pvw-dim)}
+.key .tally{position:absolute;right:4px;top:4px;font-size:9px;font-weight:800;letter-spacing:.06em;padding:1px 4px;border-radius:3px}
+.key.pgm .tally{background:var(--pgm);color:#fff}.key.pvw .tally{background:var(--pvw);color:#06210f}
+.key.hit{border-color:var(--sel)}
+.key.all{border-style:dashed;background:transparent}
+.key.all .th{background:transparent}
+
 /* camera tab */
-.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none;--fl:0px;--fr:0px;
+.chips{display:flex;gap:8px;overflow-x:auto;padding-top:12px;scrollbar-width:none;--fl:0px;--fr:0px;
   /* fade an edge while more cameras are hidden past it (see camFade), so the row reads as scrollable */
   -webkit-mask-image:linear-gradient(to right,transparent,#000 var(--fl),#000 calc(100% - var(--fr)),transparent);
           mask-image:linear-gradient(to right,transparent,#000 var(--fl),#000 calc(100% - var(--fr)),transparent)}
 .chips::-webkit-scrollbar{display:none}
-.chip{flex:none;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:999px;font-weight:600}
-.chip.sel{background:var(--blue);border-color:var(--blue);color:#fff}
-/* the chips row doubles as the page indicator for the swipeable picture: a highlight slides to the camera shown */
 #cams{position:relative}
-#cams .chip{position:relative;z-index:1;transition:color .25s}
-#cams .chip.sel{background:transparent;border-color:transparent}
 #camList{display:flex;gap:8px}
-#cams .ind[hidden]{display:none}
-#cams .ind{position:absolute;z-index:0;border-radius:999px;background:var(--blue);pointer-events:none;
-  transition:left .3s cubic-bezier(.2,.8,.2,1),width .3s cubic-bezier(.2,.8,.2,1)}
-.chip .dot{width:8px;height:8px}
-/* top-right corner of the camera picture: LIVE pill (camera is in the program) next to the fps count */
-.mon .tr{position:absolute;right:6px;top:6px;display:flex;gap:4px;align-items:center}
-.mon .tr .fps{position:static}
-.onair{display:none;font-size:10px;font-weight:800;letter-spacing:.06em;padding:1px 6px;border-radius:5px;background:var(--red);color:#fff;align-items:center;gap:4px}
+.chip{flex:none;display:flex;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;font-weight:600;font-size:14px;position:relative;z-index:1}
+.chip .dot{width:7px;height:7px;border-radius:50%;background:var(--pgm)}.chip .dot.ok{background:var(--pvw)}
+.chip.sel{background:transparent;border-color:transparent}
+.chip .air{font-size:9px;font-weight:800;letter-spacing:.06em;padding:1px 4px;border-radius:3px;background:var(--pgm);color:#fff}
+/* the chips row doubles as the page indicator for the swipeable picture: a highlight slides to the camera shown */
+/* White pill over the chips. It carries its own copy of the chip row in dark text (.indtext), shifted back by the
+   pill's own offset and clipped to it, so a name is dark exactly where the pill covers it, even mid-slide. */
+#cams .ind{position:absolute;left:0;top:0;z-index:2;border-radius:999px;background:var(--text);pointer-events:none;overflow:hidden;will-change:transform,width;
+  transition:transform .38s cubic-bezier(.22,.9,.28,1),width .38s cubic-bezier(.22,.9,.28,1)}
+#cams .indtext{position:absolute;display:flex;gap:8px;will-change:transform;transition:transform .38s cubic-bezier(.22,.9,.28,1)}
+#cams .indtext .chip{background:transparent;border-color:transparent;color:#141518}
+#cams .ind.drag,#cams .ind.drag .indtext{transition:none}  /* following a finger on the picture */
+#tabCam .stick{overflow:hidden}
+.camview{position:relative}
+#camMon{touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;will-change:transform}
+#camMon img{-webkit-user-drag:none;pointer-events:none}
+.mon .tr{position:absolute;right:4px;top:4px;display:flex;gap:4px;align-items:center}
+.onair{display:none;font-size:10px;font-weight:800;letter-spacing:.06em;padding:1px 6px;border-radius:3px;background:var(--pgm);color:#fff;align-items:center;gap:4px}
 .onair::before{content:"";width:6px;height:6px;border-radius:50%;background:#fff}
 .onair.show{display:flex}
-.camview{margin-top:var(--gap)}
-.ctl{display:grid;grid-template-columns:1fr 92px;gap:var(--gap);margin-top:var(--gap);align-items:stretch}
-.pad{position:relative;aspect-ratio:1;max-width:300px;width:100%;align-self:center;margin:0 auto;border-radius:50%;background:radial-gradient(circle,var(--panel2) 0 30%,var(--panel) 31% 100%);border:1px solid var(--line);touch-action:pan-y}
+.peek{position:absolute;top:50%;transform:translateY(-50%);font-weight:700;font-size:15px;opacity:0;pointer-events:none;white-space:nowrap}
+.peek.r{right:50px}.peek.l{left:50px}  /* clear of the side arrows (they reach 40 px in) */
+/* an arrow each side (also tappable); faded after a few seconds untouched */
+.camnav{position:absolute;top:18%;bottom:18%;width:48px;z-index:2;padding:0;border:0;border-radius:0;background:none;color:#fff;opacity:.9;
+  display:flex;align-items:center;justify-content:center;transition:opacity .6s,transform .15s}
+.camnav:active{background:none;opacity:1;transform:scale(.85);transition:none}
+.camnav.l{left:-6px}.camnav.r{right:-6px}
+.camnav svg{width:26px;height:26px;filter:drop-shadow(0 0 2px #000a) drop-shadow(0 1px 1px #0008)}
+.camview.idle .camnav{opacity:.28}
+/* Move | Presets: one panel, two faces of equal standing */
+.pseg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:12px;background:var(--panel)}
+.pseg button{border:0;border-radius:0;background:transparent;padding:10px 4px;font-weight:600;font-size:14px;color:var(--dim);display:flex;align-items:center;justify-content:center;gap:7px}
+.pseg button svg{width:18px;height:18px}
+.pseg button+button{border-left:1px solid var(--line)}
+.pseg button.sel{background:var(--key-hi);color:var(--text)}
+.face{margin-top:10px;min-height:236px}
+.face h2{margin-top:0}
+.ctl{display:grid;grid-template-columns:1fr 80px;gap:var(--gap);align-items:stretch}
+.dpad{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:6px;aspect-ratio:1;max-width:260px;width:100%;margin:0 auto;align-self:center}
+.dpad button,.side button,#focusRow button{touch-action:pan-y}  /* swipe over them to scroll (see holdButton) */
+.dpad button{padding:0;display:flex;align-items:center;justify-content:center;border-radius:10px}
+.dpad button svg{width:28px;height:28px;transform:rotate(var(--r))}
+.dpad button.diag{background:var(--panel);color:var(--dim)}
+.dpad button.diag svg{width:22px;height:22px}
+.dpad button.held,.side button.held,#focusRow button.held{background:var(--sel);border-color:var(--sel);color:#fff}
+.dpad .mid svg{width:18px;height:18px;transform:none}
+.pad{position:relative;aspect-ratio:1;max-width:260px;width:100%;align-self:center;margin:0 auto;border-radius:50%;background:radial-gradient(circle,var(--key) 0 30%,var(--panel) 31% 100%);border:1px solid var(--line);touch-action:pan-y}
 .pad::before,.pad::after{content:"";position:absolute;background:var(--line)}
 .pad::before{left:50%;top:10%;bottom:10%;width:1px}
 .pad::after{top:50%;left:10%;right:10%;height:1px}
-.knob{position:absolute;left:50%;top:50%;width:30%;height:30%;margin:-15% 0 0 -15%;border-radius:50%;background:var(--blue);box-shadow:0 4px 14px #0008;transition:transform .12s;pointer-events:none;z-index:1}
+.knob{position:absolute;left:50%;top:50%;width:30%;height:30%;margin:-15% 0 0 -15%;border-radius:50%;background:var(--sel);box-shadow:0 4px 14px #0008;transition:transform .12s;pointer-events:none;z-index:1}
 .pad.active .knob{transition:none}
-/* direction buttons (default) — the joystick is the alternative, Settings → Cameras → Controls */
-.dpad{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:6px;aspect-ratio:1;max-width:300px;width:100%;margin:0 auto;align-self:center}
-.dpad button,.side button,#focusRow button{touch-action:pan-y}  /* swipe over them to scroll (see holdButton) */
-.dpad button{padding:0;display:flex;align-items:center;justify-content:center;border-radius:14px}
-.dpad button svg{width:30px;height:30px;transform:rotate(var(--r))}
-.dpad button.diag{background:var(--panel);color:var(--dim)}
-.dpad button.diag svg{width:24px;height:24px}
-.dpad button.held{background:var(--blue);border-color:var(--blue);color:#fff}
-.dpad .mid{background:#3b1416;border-color:var(--red);color:#ffb3b5;font-size:20px}
-.dpad .mid svg{width:22px;height:22px;transform:none}
 .side{display:flex;flex-direction:column;gap:var(--gap)}
-.side button{flex:1;font-size:22px;font-weight:700;padding:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
-.side button svg{width:26px;height:26px}
-.side small{display:block;font-size:11px;color:var(--dim);font-weight:500}
-.row{display:flex;gap:var(--gap);margin-top:var(--gap);align-items:center}
-.row button{flex:1;font-weight:600;display:flex;align-items:center;justify-content:center;gap:7px}
-.row button svg{width:18px;height:18px;flex:none}
-#focusRow button{white-space:nowrap;padding-left:8px;padding-right:8px}
-#btnStop{background:#3b1416;border-color:var(--red);color:#ffb3b5}
-#btnRefresh{background:#33270b;border-color:var(--amber);color:#f2cc72}
-.speed{display:flex;align-items:center;gap:10px;margin-top:var(--gap);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
-.speed input{flex:1;accent-color:var(--blue);pointer-events:none}  /* driven by the row's own drag handler */
-.speed{touch-action:pan-y;user-select:none;-webkit-user-select:none;cursor:ew-resize}
-.speed span{min-width:42px;text-align:right;font-variant-numeric:tabular-nums;color:var(--dim)}
-.speed .spl{display:flex;align-items:center;gap:7px;text-align:left;min-width:0;color:var(--text)}
+.side button{flex:1;padding:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;color:var(--dim)}
+.side button svg{width:24px;height:24px;color:var(--text)}
+.side button.held svg{color:#fff}.side button.held{color:#fff}
+#focusRow{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:var(--gap);margin-top:12px}
+#focusRow button{padding:10px 6px;font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+#focusRow button svg{width:16px;height:16px;flex:none}
+#btnAF.on{border-color:var(--sel);color:var(--sel-text)}
+.speed{display:flex;align-items:center;gap:10px;margin-top:var(--gap);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;touch-action:pan-y;user-select:none;-webkit-user-select:none;cursor:ew-resize}
+.speed input{flex:1;accent-color:var(--sel);pointer-events:none}  /* driven by the row's own drag handler */
+.speed span{min-width:42px;text-align:right;font-variant-numeric:tabular-nums;color:var(--dim);font-size:13px}
+.speed .spl{display:flex;align-items:center;gap:7px;text-align:left;min-width:0;color:var(--text);font-weight:600}
 .speed .spl svg{width:18px;height:18px;color:var(--dim)}
-.presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px}
-.preset{padding:0;overflow:hidden;display:flex;flex-direction:column;text-align:left;border-radius:10px}
-.preset .th{aspect-ratio:16/9;background:#000 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:22px;font-weight:700}
-.preset .pn{padding:6px 8px;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.preset.hit{outline:2px solid var(--blue)}
-.empty{color:var(--dim);font-size:13px;padding:10px 2px}
-/* tabs */
+
+/* audio */
+.arow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:var(--gap);align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.arow:last-child{border-bottom:0}
+.ainfo{min-width:0;display:flex;flex-direction:column;gap:6px}
+.atop{display:flex;align-items:baseline;gap:8px}
+.arow .n{flex:1;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arow .db{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
+.meter{display:flex;flex-direction:column;gap:2px}
+/* -60..0 dB, OBS colours: green to -20 dB, yellow to -9 dB, red above */
+.mbar{position:relative;height:5px;border-radius:3px;overflow:hidden;background:linear-gradient(to right,#2fbf57 0 66.7%,#e2b33c 66.7% 85%,#e5372f 85%)}
+.mbar .cv{position:absolute;inset:0;background:#0c0d10;transform-origin:right;transform:scaleX(1)}
+.mbar .hd{position:absolute;top:0;bottom:0;width:2px;margin-left:-2px;left:0;background:#fff;opacity:0}
+.meter.muted .mbar{filter:grayscale(1);opacity:.45}
+.meter.idle .mbar{opacity:.35}
+.mute{width:80px;padding:9px 6px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px}
+.mute svg{width:16px;height:16px;flex:none}
+.mute.muted{background:var(--warn);border-color:var(--warn);color:#2a1a02}
+.amon{width:42px;height:38px;padding:0;display:flex;align-items:center;justify-content:center;color:var(--dim)}
+.amon svg{width:18px;height:18px}
+.amon.on{background:var(--sel-dim);border-color:var(--sel);color:var(--sel-text)}
+.listening{display:flex;align-items:center;gap:8px;margin:0 0 4px;padding:8px 10px;border-radius:8px;background:var(--sel-dim);border:1px solid var(--sel);font-size:12px;color:#c9d8ff}
+.listening i{width:8px;height:8px;border-radius:50%;background:var(--sel-text);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.3}}
+
+/* bottom tabs */
 nav{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--panel);border-top:1px solid var(--line);padding-bottom:var(--safe-b)}
-nav .wrap{display:grid;grid-template-columns:1fr 1fr;height:64px}
-nav button{background:none;border:none;border-radius:0;color:var(--dim);font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:12px}
-nav button .ic svg{width:24px;height:24px}
-nav .ic{line-height:0}
-nav button.sel{color:var(--blue)}
-.tab{display:none} .tab.sel{display:block}
+nav .wrap{display:grid;grid-template-columns:repeat(3,1fr);height:60px;padding:0}
+nav button{background:none;border:none;border-radius:0;color:var(--dim);font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px}
+nav button:active{background:none}
+nav button svg{width:22px;height:22px}
+nav button.sel{color:var(--text)}nav button.sel svg{color:var(--sel)}
+.tab{display:none}.tab.sel{display:block}
+
 /* sheets */
-.scrim{position:fixed;inset:0;background:#000a;z-index:20;display:none;align-items:flex-end;justify-content:center}
+.scrim{position:fixed;inset:0;background:#000a;z-index:40;display:none;align-items:flex-end;justify-content:center}
 .scrim.show{display:flex}
-.sheet{width:100%;max-width:560px;background:var(--panel);border-radius:18px 18px 0 0;border:1px solid var(--line);padding:18px 16px calc(18px + var(--safe-b));
-  /* the sheet scrolls itself: on a phone the settings (scenes + cameras) are taller than the screen */
+.sheet{width:100%;max-width:560px;background:var(--panel);border-radius:16px 16px 0 0;border:1px solid var(--line);padding:18px 16px calc(18px + var(--safe-b));
   max-height:calc(100vh - 24px - var(--safe-t));max-height:calc(100dvh - 24px - var(--safe-t));overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
-.sheet .btns{position:sticky;bottom:calc(-18px - var(--safe-b));margin:0 -16px;padding:12px 16px;background:var(--panel);border-top:1px solid var(--line)}
-.sheet h3{margin:0 0 6px;font-size:18px}
-.sheet p{margin:0 0 14px;color:var(--dim);white-space:pre-line}
-.sheet .btns{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
+.sheet h3{margin:0 0 4px;font-size:17px}
+.sheet p{margin:0 0 14px;color:var(--dim);font-size:14px;white-space:pre-line}
+.sheet .btns{position:sticky;bottom:calc(-18px - var(--safe-b));margin:0 -16px;padding:12px 16px;background:var(--panel);border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
 .sheet .btns.one{grid-template-columns:1fr}
-.sheet .danger{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
-.sheet .primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:700}
-/* settings groups */
-details.grp{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:var(--bg)}
-details.grp summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:12px 40px 12px 12px;position:relative}
-details.grp summary>div{display:flex;flex-direction:column;gap:2px;min-width:0}
-.gi{flex:none;width:34px;height:34px;border-radius:9px;background:#1f6feb26;color:var(--blue);display:flex;align-items:center;justify-content:center;font-style:normal}
-.gi svg{width:19px;height:19px}
-.sub{font-size:12px;color:var(--dim);font-weight:600;margin:14px 0 8px;display:flex;justify-content:space-between}
-.note{font-size:12px;color:var(--dim);margin:8px 0 4px}
-/* shown while OBS is closed or not answering (Start OBS: server.py /api/obs/start) */
-.down{display:flex;align-items:center;gap:12px;margin:10px 0 0;padding:12px;border-radius:12px;background:#2a1d0c;border:1px solid #9e6a03}
-.down[hidden]{display:none}
-.down span{flex:1;display:flex;flex-direction:column;gap:2px}
-.down small{font-size:12px;color:var(--dim)}
-.down button{flex:none;background:var(--green);border-color:var(--green);color:#fff;font-weight:700;padding:10px 14px;display:flex;align-items:center;gap:6px}
-.down button svg{width:18px;height:18px}
-.down button[hidden]{display:none}
-/* picture quality: three tiles */
-.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.seg.two{grid-template-columns:1fr 1fr;margin-bottom:12px}
-.seg input{position:absolute;opacity:0;pointer-events:none}
-.seg span{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);cursor:pointer;text-align:center}
-.seg svg{width:22px;height:22px;color:var(--dim);margin-bottom:2px}
-.seg b{font-size:13px}.seg small{font-size:11px;color:var(--dim)}
-.seg input:checked+span{border-color:var(--blue);background:#1f6feb22;box-shadow:inset 0 0 0 1px var(--blue)}
-.seg input:checked+span svg{color:var(--blue)}
-/* on/off rows */
-.tog{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);margin-top:12px;cursor:pointer}
-.tog+.tog{margin-top:0}
-.tog>span{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
-.tog small{font-size:12px;color:var(--dim)}
-.sw{appearance:none;-webkit-appearance:none;flex:none;width:46px;height:28px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);position:relative;cursor:pointer;transition:background .15s;margin:0}
-.sw::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#c9d1d9;transition:transform .15s}
-.sw:checked{background:var(--green);border-color:var(--green)}
-.sw:checked::after{transform:translateX(18px);background:#fff}
-/* scenes: eye on = shown on the phone */
-.scns{display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:40vh;overflow:auto}
-.scn{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);cursor:pointer;min-width:0}
-.scn input{position:absolute;opacity:0;pointer-events:none}
-.scn svg{width:18px;height:18px;flex:none;display:block}
-.scn .on{color:var(--green)}.scn .off{display:none;color:var(--dim)}
-.scn .nm{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.scn:has(input:not(:checked)){background:transparent;border-style:dashed}
-.scn:has(input:not(:checked)) .on{display:none}.scn:has(input:not(:checked)) .off{display:block}
-.scn:has(input:not(:checked)) .nm{color:var(--dim);text-decoration:line-through}
-details.grp summary::-webkit-details-marker{display:none}
-details.grp summary::after{content:"";position:absolute;right:16px;top:50%;width:8px;height:8px;margin-top:-6px;border:solid var(--dim);border-width:0 2px 2px 0;transform:rotate(45deg);transition:transform .15s}
-details.grp[open] summary::after{transform:rotate(-135deg);margin-top:-2px}
-details.grp summary span{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-details.grp .grpb{padding:2px 14px 6px;border-top:1px solid var(--line)}
-details.grp .grpb>.field:first-child,details.grp .grpb>div:first-child{margin-top:12px}
+.sheet .btns button{font-weight:600}
+.sheet .danger{background:var(--pgm);border-color:var(--pgm);color:#fff;font-weight:700}
+.sheet .primary{background:var(--text);border-color:var(--text);color:#141518;font-weight:700}
+/* stream and recording sheet */
+.out{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.oname{display:flex;align-items:center;gap:10px;min-width:0}
+.oname>svg{width:20px;height:20px;flex:none;color:var(--dim)}
+.oname b{display:block;font-size:15px}.oname span{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.oname .live{color:var(--pgm);font-weight:600}.oname .warn{color:var(--warn);font-weight:600}
+.hold{position:relative;overflow:hidden;width:136px;padding:12px 8px;font-weight:700;font-size:13px;touch-action:none}
+.hold .fill{position:absolute;inset:0;background:var(--pgm);transform-origin:left;transform:scaleX(0)}
+.hold span{position:relative}
+.hold.go{background:var(--text);color:#141518;border-color:var(--text)}
+.ostats{font-size:12px;color:var(--dim);margin:4px 0 0;font-variant-numeric:tabular-nums}
+/* form fields (YouTube sheet, connection page) */
 .field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
-.camrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.camrow .field{min-width:0}.camrow select{width:100%}
 .field label{font-size:12px;color:var(--dim)}
-.field input,.field textarea{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px}
+.field input,.field textarea,.field select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:11px}
 .field textarea{resize:vertical;min-height:72px}
 .ytrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ytrow .field{min-width:0}.ytrow select{width:100%}
-.check{display:flex;align-items:center;gap:10px;padding:8px 0}
-.check input{width:20px;height:20px;accent-color:var(--blue)}
-.hidelist{max-height:30vh;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:2px 12px;margin-bottom:12px}
-.toast{position:fixed;left:50%;bottom:calc(80px + var(--safe-b));transform:translateX(-50%);background:#30363d;color:var(--text);padding:10px 16px;border-radius:10px;z-index:30;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
+.tog{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
+.tog>span{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tog small{font-size:12px;color:var(--dim)}
+.sw{appearance:none;-webkit-appearance:none;flex:none;width:44px;height:26px;border-radius:999px;background:var(--key);border:1px solid var(--line);position:relative;cursor:pointer;transition:background .15s;margin:0}
+.sw::after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#c9cbd1;transition:transform .15s}
+.sw:checked{background:var(--sel);border-color:var(--sel)}
+.sw:checked::after{transform:translateX(18px);background:#fff}
+.toast{position:fixed;left:50%;bottom:calc(76px + var(--safe-b));transform:translateX(-50%);background:#33353c;color:var(--text);padding:10px 16px;border-radius:10px;z-index:60;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
 .toast.show{opacity:1}
 .toast.err{background:#5c1a1d}
+
+/* ⋮ menu */
+.menu{position:fixed;top:calc(var(--hh) + var(--safe-t) - 4px);right:max(8px,calc((100vw - 560px)/2 + 8px));width:270px;max-width:calc(100vw - 16px);background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 14px 34px #000b;z-index:30;overflow:hidden}
+/* stats block: three figures, then any warnings as label/value rows inside the same block (one divider below it) */
+.mstatsw{border-bottom:1px solid var(--line);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.mstats{display:grid;grid-template-columns:repeat(3,1fr);text-align:center;font-variant-numeric:tabular-nums}
+.mstats b{display:block;font-size:15px}.mstats span{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+.mstats-x{display:flex;flex-direction:column;gap:3px;padding-top:8px;border-top:1px solid var(--line)}
+.mstats-x div{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--dim)}
+.mstats-x b{font-weight:600;color:var(--warn);font-variant-numeric:tabular-nums}
+.mi{display:flex;align-items:center;gap:10px;width:100%;padding:12px;background:transparent;border:0;border-radius:0;text-align:left;font-size:14px;cursor:pointer;position:relative}
+.mi:active{background:var(--key)}
+.mi+.mi{border-top:1px solid var(--line)}
+.mi>svg{width:18px;height:18px;color:var(--dim);flex:none}
+.mi .grow{flex:1;min-width:0}.mi small{display:block;font-size:11px;color:var(--dim)}
+.mi .bdot{width:8px;height:8px;border-radius:50%;background:var(--warn)}
+
+/* full-screen pages: settings, connection, scenes */
+.page{position:fixed;inset:0;background:var(--bg);z-index:20;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .22s ease;visibility:hidden;padding-top:var(--safe-t)}
+.page.show{transform:none;visibility:visible}
+#pg2{z-index:21}
+.ph{flex:none;border-bottom:1px solid var(--line)}
+.ph .wrap{display:flex;align-items:center;gap:6px;height:var(--hh);padding-left:6px}
+.ph h3{margin:0;font-size:17px;font-weight:600;flex:1}
+.ph .back{background:transparent;border:0;padding:8px;color:var(--text);display:flex}
+.ph .back svg{width:22px;height:22px}
+.ph .act{font-size:13px;padding:6px 10px}
+.pbody{flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.pbody .wrap{padding-bottom:calc(28px + var(--safe-b))}
+.sl{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);margin:20px 4px 7px;display:flex;align-items:center;gap:6px}
+.sl svg{width:14px;height:14px;flex:none}
+.sl .who{text-transform:none;letter-spacing:0;font-weight:600;font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid var(--line)}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.list>*+*{border-top:1px solid var(--line)}
+.row{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:10px 12px;background:transparent;border:0;border-radius:0;text-align:left;font-size:15px;cursor:pointer}
+.row:active{background:var(--key)}
+.row .grow{flex:1;min-width:0}.row small{display:block;font-size:12px;color:var(--dim);margin-top:2px}
+.row .v{color:var(--dim);font-size:14px;white-space:nowrap}
+.row.nav::after{content:"";width:7px;height:7px;border:solid var(--dim);border-width:2px 2px 0 0;transform:rotate(45deg);margin:0 4px 0 2px;flex:none}
+.row .cdot{width:8px;height:8px;border-radius:50%;background:var(--pvw);flex:none}.row .cdot.off{background:var(--pgm)}
+div.row{cursor:default}div.row:active{background:transparent}
+.rowx{padding:12px}
+.rowx>b{font-weight:500;font-size:15px}
+.seg{display:grid;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:8px}
+.seg button{border:0;border-radius:0;background:transparent;padding:10px 4px;font-size:13px;font-weight:600;color:var(--dim)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.sel{background:var(--key-hi);color:var(--text)}
+.foot{font-size:12px;color:var(--dim);margin:7px 4px 0;line-height:1.4}
+.updc{display:flex;align-items:center;gap:10px;margin-top:14px;padding:12px;background:var(--panel);border:1px solid var(--warn);border-radius:10px;font-size:13px}
+.updc div{flex:1;min-width:0}.updc b{display:block;font-size:15px}.updc span{color:var(--dim)}
+.updc button{padding:9px 14px;font-weight:700;background:var(--text);color:#141518;border-color:var(--text);flex:none}
+.flist{padding:12px 12px 0}
+.qr{display:flex;gap:12px;align-items:center;padding:12px}
+.qr>svg{width:44px;height:44px;flex:none;color:var(--dim)}
+.qr p{margin:0;font-size:13px;color:var(--dim)}.qr b{color:var(--text);display:block;font-size:15px;margin-bottom:2px}
+.wide{width:100%;margin-top:12px;padding:13px;font-weight:700;background:var(--text);color:#141518;border-color:var(--text)}
+details.hand{margin-top:14px}
+details.hand summary{cursor:pointer;font-size:14px;color:var(--dim);padding:6px 4px;list-style:none}
+details.hand summary::-webkit-details-marker{display:none}
+details.hand summary::before{content:"▸ "}details.hand[open] summary::before{content:"▾ "}
+.find{font:inherit;width:100%;margin:12px 0 10px;padding:11px 12px;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.srow{display:flex;align-items:center}
+.suse{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:8px 10px;background:transparent;border:0;border-radius:0;text-align:left;font-size:15px;font-weight:500}
+.suse small{display:block;font-size:11px;font-weight:600}
+.srow.pgm .suse small{color:var(--pgm)}.srow.pvw .suse small{color:var(--pvw)}
+.sth{width:64px;flex:none;aspect-ratio:16/9;border-radius:4px;overflow:hidden;background:#000;outline:2px solid transparent;outline-offset:-2px}
+.sth img{width:100%;height:100%;object-fit:cover;display:block}
+.sth img:not([src]){visibility:hidden}
+.srow.pgm .sth{outline-color:var(--pgm)}.srow.pvw .sth{outline-color:var(--pvw)}
+.star{width:48px;height:48px;flex:none;display:flex;align-items:center;justify-content:center;background:transparent;border:0;color:var(--dim);padding:0}
+.star svg{width:20px;height:20px}.star.on{color:var(--warn)}
+@media (prefers-reduced-motion:reduce){.page,.chip,#cams .ind{transition:none}.listening i{animation:none}}
 </style>
 </head>
 <body>
 <header><div class="wrap">
-  <span class="dot" id="connDot"></span>
-  <span class="title" id="title">OBS Remote</span>
-  <span class="pill" id="pillStream"><span class="b"></span><span id="pillStreamT">OFF</span></span>
-  <span class="pill" id="pillRec"><span class="b"></span><span id="pillRecT">REC</span></span>
-  <button class="icon-btn" id="btnSettings" aria-label="Settings"><i class="ic" data-i="gear"></i></button>
+  <span class="conn" id="connDot"></span>
+  <div class="ttl"><b id="title">OBS Remote</b><small id="sub">Connecting…</small></div>
+  <button class="tag act" id="tagStream"><i></i><span class="tic" data-i="broadcast"></span><span id="tagStreamT">Go live</span></button>
+  <button class="tag act" id="tagRec"><i></i><span class="tic" data-i="rec"></span><span id="tagRecT">Record</span></button>
+  <button class="icon-btn" id="btnMore" aria-label="More"><i class="ic" data-i="more"></i></button>
 </div></header>
 
 <main class="wrap">
   <div class="down" id="obsDown" hidden><span><b id="downT"></b><small id="downS"></small></span><button id="btnStartObs" hidden><i class="ic" data-i="power"></i>Start OBS</button></div>
-  <!-- LIVE -->
+
+  <!-- SWITCHER -->
   <div class="tab sel" id="tabLive">
-    <div class="stick"><div class="monitors" id="monitors">
-      <div class="mon pvw" id="monPvw"><img id="imgPvw" alt=""><span class="lab">PREVIEW</span><span class="fps" id="imgPvwFps"></span><span class="name" id="namePvw"></span></div>
-      <div class="mon pgm"><img id="imgPgm" alt=""><span class="lab">PROGRAM</span><span class="fps" id="imgPgmFps"></span><span class="name" id="namePgm"></span></div>
-    </div></div>
-    <section style="margin-top:0">
-      <div class="take" id="takeRow" style="margin-top:0">
-        <button id="btnTake">TAKE</button>
+    <div class="stick">
+      <div class="monitors" id="monitors">
+        <div class="mon pvw" id="monPvw"><img id="imgPvw" alt=""><span class="lab">PREVIEW</span><span class="fps" id="imgPvwFps"></span><span class="name" id="namePvw"></span></div>
+        <div class="mon pgm"><img id="imgPgm" alt=""><span class="lab">PROGRAM</span><span class="fps" id="imgPgmFps"></span><span class="name" id="namePgm"></span></div>
       </div>
-    </section>
-    <h2><span id="sceneHint">Scenes</span></h2>
-    <div class="grid" id="scenes"></div>
-    <h2>Output</h2>
-    <div class="outputs">
-      <button id="btnStream"><span class="lbl"><i class="ic" data-i="broadcast"></i><span id="streamL">Start stream</span></span><small id="streamT">—</small></button>
-      <button id="btnRec"><span class="lbl"><i class="ic" data-i="rec"></i><span id="recL">Start recording</span></span><small id="recT">—</small></button>
+      <div class="take" id="takeRow"><button id="btnCut">CUT</button><button id="btnTake">TAKE</button></div>
     </div>
-    <div class="assrow" id="assRow" hidden>
-      <i class="ic asi" data-i="shuffle"></i><span>Advanced scene switcher<small id="assT"></small></span>
-      <button id="btnAss" role="switch" aria-checked="false" aria-label="Advanced scene switcher"><span></span></button>
-    </div>
-    <div class="stats" id="stats"></div>
-    <h2 id="audioHead">Audio <span class="hbtns"><button id="btnListen" hidden></button><button id="btnAllAudio">Show all</button></span></h2>
-    <div class="audio" id="audio"></div>
+    <h2><span>Scenes <span class="h" id="sceneHint"></span></span><button id="btnFav"></button></h2>
+    <div class="keys" id="scenes"></div>
   </div>
 
   <!-- CAMERA -->
   <div class="tab" id="tabCam">
-    <section style="margin-bottom:0">
-      <div class="chips" id="cams"><span class="ind" hidden></span><div class="chiplist" id="camList"></div></div>
-    </section>
+    <div class="chips" id="cams"><div class="ind" hidden><div class="indtext" aria-hidden="true"></div></div><div id="camList"></div></div>
     <div class="stick">
-      <span class="peek" id="camPeek"></span>
-      <div class="mon camview" id="camMon"><img id="imgCam" alt=""><span class="tr"><span class="onair" id="onair" title="This camera is in the live program: moves will be seen">LIVE</span><span class="fps" id="imgCamFps"></span></span><span class="name" id="camState"></span>
-        <button class="camnav l" id="camPrev" aria-label="Previous camera" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><button class="camnav r" id="camNext" aria-label="Next camera" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button></div>
+      <div class="camview" id="camView">
+        <span class="peek" id="camPeek"></span>
+        <div class="mon" id="camMon"><img id="imgCam" alt=""><span class="tr"><span class="onair" id="onair" title="This camera is in the live program: moves will be seen">ON AIR</span><span class="fps" id="imgCamFps"></span></span><span class="name" id="camState"></span></div>
+        <button class="camnav l" id="camPrev" aria-label="Previous camera" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <button class="camnav r" id="camNext" aria-label="Next camera" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+      </div>
     </div>
-    <section style="margin-top:0">
+    <div class="pseg" role="tablist">
+      <button data-face="move" role="tab"><i class="ic" data-i="dpad"></i>Move</button>
+      <button data-face="presets" role="tab"><i class="ic" data-i="presets"></i>Presets</button>
+    </div>
+    <div class="face" id="faceMove">
       <div class="ctl">
         <div class="pad" id="pad"><div class="knob" id="knob"></div></div>
         <div class="dpad" id="dpad"></div>
         <div class="side">
-          <button data-zoom="1"><i class="ic" data-i="zoomIn"></i><small>Zoom in</small></button>
-          <button data-zoom="-1"><i class="ic" data-i="zoomOut"></i><small>Zoom out</small></button>
+          <button data-zoom="1"><i class="ic" data-i="zoomIn"></i>Zoom in</button>
+          <button id="btnStopJoy" hidden><i class="ic" data-i="stop"></i>Stop</button>
+          <button data-zoom="-1"><i class="ic" data-i="zoomOut"></i>Zoom out</button>
         </div>
       </div>
-      <div class="row" id="focusRow">
-        <button data-focus="-1"><i class="ic" data-i="focusNear"></i>Near</button>
-        <button id="btnAF"><i class="ic" data-i="autofocus"></i><span id="afL">Auto focus</span></button>
-        <button data-focus="1"><i class="ic" data-i="focusFar"></i>Far</button>
-      </div>
-      <div class="speed"><span class="spl"><i class="ic" data-i="gauge"></i>Speed</span><input type="range" id="speed" min="0.05" max="1" step="0.05"><span id="speedV"></span></div>
-      <div class="row"><button id="btnStop"><i class="ic" data-i="stop"></i>Stop moving</button><button id="btnRefresh"><i class="ic" data-i="refresh"></i>Refresh camera</button></div>
-    </section>
-    <h2>Presets <button id="btnAllPresets">Show all</button></h2>
-    <div class="presets" id="presets"></div>
-    <p class="empty">Tap a preset to recall it. Hold one to save the camera's current position over it.</p>
+    </div>
+    <div class="face" id="facePresets" hidden>
+      <h2><span class="h">Tap to recall · hold to save over it</span><button id="btnAllPresets">Show all</button></h2>
+      <div class="keys" id="presets"></div>
+    </div>
+    <div id="focusRow">
+      <button data-focus="-1"><i class="ic" data-i="focusNear"></i>Near</button>
+      <button id="btnAF"><i class="ic" data-i="autofocus"></i><span id="afL">Auto focus</span></button>
+      <button data-focus="1"><i class="ic" data-i="focusFar"></i>Far</button>
+    </div>
+    <div class="speed"><span class="spl"><i class="ic" data-i="gauge"></i>Speed</span><input type="range" id="speed" min="0.05" max="1" step="0.05" aria-label="Speed"><span id="speedV"></span></div>
+  </div>
+
+  <!-- AUDIO -->
+  <div class="tab" id="tabAudio">
+    <h2><span>Audio mixer</span><span class="bs"><button id="btnListen" hidden></button><button id="btnAllAudio">Show all</button></span></h2>
+    <div class="listening" id="listening" hidden><i></i>Playing OBS's monitoring on this phone</div>
+    <div id="audio"></div>
+    <p class="note" id="listenNote" hidden>Listen plays the sources whose headphones are lit. Each headphone button switches that source's monitoring in OBS.</p>
   </div>
 </main>
 
 <nav><div class="wrap">
-  <button class="sel" data-tab="tabLive"><i class="ic" data-i="monitor"></i>Live</button>
+  <button class="sel" data-tab="tabLive"><i class="ic" data-i="switcher"></i>Switcher</button>
   <button data-tab="tabCam"><i class="ic" data-i="camera"></i>Camera</button>
+  <button data-tab="tabAudio"><i class="ic" data-i="mixer"></i>Audio</button>
 </div></nav>
 
+<div class="menu" id="menu" hidden></div>
+<div class="page" id="pg1"></div>
+<div class="page" id="pg2"></div>
 <div class="scrim" id="scrim"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
 
@@ -420,7 +485,7 @@ class OBS{
         if(was)this.emit("close",ev)};
       ws.onerror=()=>{};
     })}
-  // Closing on purpose (e.g. Settings → Save & connect) must also fail the requests still waiting for an answer:
+  // Closing on purpose (e.g. Connect on the Connection page) must also fail the requests still waiting for an answer:
   // the picture loop awaits one, and left pending it would wait forever (black picture until the page reloads).
   close(){if(this.ws){this.ws.onclose=null;try{this.ws.close()}catch{}this.ws=null}this.ready=false;
     this.pending.forEach(p=>p.rej(new Error("disconnected")));this.pending.clear()}
@@ -445,19 +510,22 @@ const svgI=d=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 const ICON={
   wifi:svgI('<path d="M2 8.8a15 15 0 0 1 20 0M5 12.4a10 10 0 0 1 14 0M8.5 15.9a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/>'),
   monitor:svgI('<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>'),
+  switcher:svgI('<rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><rect x="3" y="14" width="5" height="6" rx="1"/><rect x="9.5" y="14" width="5" height="6" rx="1"/><rect x="16" y="14" width="5" height="6" rx="1"/>'),
+  mixer:svgI('<path d="M6 4v16M12 4v16M18 4v16"/><rect x="4" y="13" width="4" height="3" rx="1" fill="currentColor"/><rect x="10" y="7" width="4" height="3" rx="1" fill="currentColor"/><rect x="16" y="11" width="4" height="3" rx="1" fill="currentColor"/>'),
   camera:svgI('<path d="M15 10l5-3v10l-5-3z"/><rect x="3" y="6" width="12" height="12" rx="2"/>'),
-  film:svgI('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>'),
+  phone:svgI('<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/>'),
+  info:svgI('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
+  more:svgI('<circle cx="12" cy="5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="19" r="1.3"/>'),
+  sliders:svgI('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>'),
+  back:svgI('<path d="M15 5l-7 7 7 7"/>'),
+  qr:svgI('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>'),
+  star:svgI('<path d="M12 3l2.8 5.8 6.2.9-4.5 4.4 1.1 6.2L12 17.4l-5.6 2.9 1.1-6.2L3 9.7l6.2-.9z"/>'),
+  starOn:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.8 5.8 6.2.9-4.5 4.4 1.1 6.2L12 17.4l-5.6 2.9 1.1-6.2L3 9.7l6.2-.9z"/></svg>',
   gauge:svgI('<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>'),
-  leaf:svgI('<path d="M5 20c0-9 6-15 15-15 0 9-6 15-15 15z"/><path d="M5 20l7-7"/>'),
   dpad:svgI('<path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/>'),
-  joystick:svgI('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/>'),
-  speaker:svgI('<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>'),
-  studio:svgI('<rect x="2" y="6" width="9" height="7" rx="1.5"/><rect x="13" y="6" width="9" height="7" rx="1.5"/><path d="M5 17h14M15 15l2 2-2 2"/>'),
+  speaker:svgI('<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>'),
   shuffle:svgI('<path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>'),
-  eye:svgI('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
   headphones:svgI('<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z"/>'),
-  eyeOff:svgI('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><path d="M3 3l18 18"/>'),
-  gear:svgI('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'),
   take:svgI('<path d="M4 12h15M13 6l6 6-6 6"/>'),
   broadcast:svgI('<circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/>'),
   rec:svgI('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/>'),
@@ -479,26 +547,28 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"
 let toastT;function toast(msg,err){const t=$("toast");t.textContent=msg;t.className="toast show"+(err?" err":"");clearTimeout(toastT);toastT=setTimeout(()=>t.className="toast",err?4000:2000)}
 const fail=e=>{console.warn(e);toast(e.message||String(e),true)};
 const tc=s=>(s||"00:00:00").split(".")[0];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function buzz(ms=12){try{navigator.vibrate&&navigator.vibrate(ms)}catch{}}
 
+let sheetClosed=null;
 function sheet(html,bind){
   $("sheet").innerHTML=html;$("scrim").classList.add("show");
-  const close=()=>$("scrim").classList.remove("show");
+  const close=()=>{$("scrim").classList.remove("show");const f=sheetClosed;sheetClosed=null;f&&f()};
   $("sheet").querySelectorAll("[data-close]").forEach(b=>b.onclick=close);
   bind&&bind(close);return close}
-$("scrim").addEventListener("click",e=>{if(e.target===$("scrim")&&!$("scrim").dataset.lock)$("scrim").classList.remove("show")});
+$("scrim").addEventListener("click",e=>{if(e.target===$("scrim")&&!$("scrim").dataset.lock){$("scrim").classList.remove("show");const f=sheetClosed;sheetClosed=null;f&&f()}});
 function confirmSheet(title,text,okLabel,danger,onOk){
   sheet(`<h3>${esc(title)}</h3><p>${esc(text)}</p><div class="btns"><button data-close>Cancel</button><button class="${danger?"danger":"primary"}" id="sheetOk">${esc(okLabel)}</button></div>`,
     close=>$("sheetOk").onclick=()=>{close();onOk()})}
 
 /* ---------- state ---------- */
 const obs=new OBS();
-const S={scenes:[],program:"",preview:"",studio:false,stream:{},rec:{},audio:[],showAllAudio:false,
+const S={scenes:[],program:"",preview:"",studio:false,stream:{},rec:{},stats:null,audio:[],showAllAudio:false,
   devices:[],dev:store.get("dev",""),presets:{},thumbs:{},showAllPresets:false,liveSources:new Set(),
   // Speed = share of each camera's max speed in its obs-ptz filter. 100% moves exactly like obs-ptz's own dock
   // (which asks for full speed and lets obs-ptz cap it at the max). New key: the old one defaulted to 50%.
-  speed:store.get("speed2",1),hidden:new Set(store.get("hidden",[])),
-  showAudio:store.get("showAudio",true),ctrl:store.get("ctrl","buttons"),quality:store.get("quality","balanced"),tab:"tabLive"};
+  speed:store.get("speed2",1),collection:"",fav:new Set(),sthumbs:{},
+  face:store.get("face","move"),ctrl:store.get("ctrl","buttons"),quality:store.get("quality","balanced"),tab:"tabLive"};
 const cfg={host:store.get("host",location.hostname||"localhost"),port:store.get("port",4455),pw:store.get("pw","")};
 // Sign-in link: the installer's QR code opens http://PC:8765/#pw=...(&port=...). The #fragment never reaches the
 // server. Save it like a typed-in login, then take it out of the address bar (and the home-screen icon's address).
@@ -509,21 +579,25 @@ const cfg={host:store.get("host",location.hostname||"localhost"),port:store.get(
 
 /* ---------- connection ---------- */
 let retry=0,retryT;
-function setConn(state,label){$("connDot").className="dot "+(state==="ok"?"ok":state==="wait"?"wait":"");$("title").textContent=label}
+S.conn="wait";
+function setConn(state,label){S.conn=state;$("connDot").className="conn "+(state==="ok"?"ok":state==="wait"?"wait":"");
+  if(state!=="ok")$("title").textContent="OBS Remote";
+  $("sub").textContent=label;renderOutputs();renderPageIfOpen()}
 // Over Tailscale or the local network? The installer shares the PC's LAN address over Tailscale, so the same icon
 // works both ways; the server says which way this connection came in. Asked again on every (re)connect.
 S.via="";
+const viaText=()=>S.via?"via Tailscale":"local network";
 async function checkVia(){
   try{S.via=(await (await fetch("/api/net",{cache:"no-store"})).json()).tailscale?"Tailscale":""}catch{S.via=""}
-  if(obs.ready)$("title").textContent=S.via?"OBS · via Tailscale":"OBS"}
+  if(obs.ready)$("sub").textContent="OBS · "+viaText()}
 async function connect(){
   clearTimeout(retryT);setConn("wait","Connecting…");
   try{
     await obs.connect(`ws://${cfg.host}:${cfg.port}`,cfg.pw);
-    retry=0;setConn("ok","OBS");showDown(null);checkVia();await loadAll();
+    retry=0;setConn("ok","OBS · "+viaText());showDown(null);checkVia();closeForced();await loadAll();
   }catch(e){
-    setConn("err","Offline");checkObsDown();
-    if(/password/i.test(e.message)){toast(e.message,true);openSettings(true);return}
+    setConn("err","Not connected");checkObsDown();
+    if(/password/i.test(e.message)){toast(e.message,true);openConnection(true);return}
     retryT=setTimeout(connect,Math.min(1000*2**retry++,10000))}
 }
 obs.on("close",()=>{setConn("err","Reconnecting…");retryT=setTimeout(connect,1000);setTimeout(checkObsDown,800)});
@@ -533,18 +607,26 @@ setInterval(()=>{if(!obs.ready&&!document.hidden&&cfg.pw!==undefined)checkObsDow
 function showDown(st){const box=$("obsDown");
   if(!st||obs.ready){box.hidden=true;return}
   box.hidden=false;
-  if(st.starting){$("downT").textContent="Starting OBS…";$("downS").textContent="It connects by itself once OBS is up.";$("btnStartObs").hidden=true;return}
-  if(st.running===false){$("downT").textContent="OBS is closed on the PC";$("downS").textContent=st.canStart?"Not running, or it crashed.":"Not running, and OBS Remote can't find it to start it.";$("btnStartObs").hidden=!st.canStart}
-  else{$("downT").textContent="OBS isn't answering";$("downS").textContent="It's open, but its WebSocket server isn't on. In OBS: Tools > WebSocket Server Settings.";$("btnStartObs").hidden=true}}
+  const say=(t,s,btn,force)=>{$("downT").textContent=t;$("downS").textContent=s;$("btnStartObs").hidden=!btn;$("btnStartObs").dataset.force=force?"1":""};
+  if(st.starting)return say("Starting OBS…","It connects by itself once OBS is up.");
+  if(st.running===false)return say("OBS is closed on the PC",st.canStart?"Not running, or it crashed.":"Not running, and OBS Remote can't find it to start it.",st.canStart);
+  // its window has gone but the program hasn't finished quitting (server.py obs_state)
+  if(st.closing){const mins=Math.floor(st.stuckFor/60),forceAfter=st.forceAfter??15;
+    if(st.stuckFor<forceAfter)return say("OBS is closing…","Its window has gone; it should finish in a moment.");
+    return say("OBS is stuck closing",`Its window has gone, but it hasn't quit${mins?` for ${mins} min`:""}. Start OBS ends it and starts OBS again.`,st.canStart,true)}
+  say("OBS isn't answering","It's open, but its WebSocket server isn't on. In OBS: Tools > WebSocket Server Settings.")}
 let startingUntil=0;
 async function checkObsDown(){
   if(obs.ready)return showDown(null);
   if(Date.now()<startingUntil)return showDown({starting:true});
   try{const r=await fetch("/api/obs",{cache:"no-store"});if(!r.ok)throw 0;const st=await r.json();if(st.running===null)throw 0;showDown(st)}
   catch{showDown(null)}}  // an older server or not on the OBS PC: say nothing extra
-$("btnStartObs").onclick=async()=>{buzz();
-  try{const r=await fetch("/api/obs/start",{method:"POST",headers:{"X-OBS-Remote":"1","X-OBS-Remote-Key":sha64("obs-remote-listen:"+cfg.pw)}});
-    const j=await r.json().catch(()=>({}));if(!r.ok&&r.status!==409)throw new Error(j.error||`The OBS PC said ${r.status}`);
+$("btnStartObs").onclick=()=>{buzz();const force=!!$("btnStartObs").dataset.force;
+  if(!force)return startObs(false);
+  confirmSheet("Start OBS again?","The copy of OBS that's stuck closing will be ended first. Your scenes were saved when it began closing.","Start OBS",false,()=>startObs(true))};
+async function startObs(force){
+  try{const r=await fetch("/api/obs/start",{method:"POST",headers:{"X-OBS-Remote":"1","X-OBS-Remote-Key":sha64("obs-remote-listen:"+cfg.pw),"Content-Type":"application/json"},body:JSON.stringify({force})});
+    const j=await r.json().catch(()=>({}));if(!r.ok&&(force||r.status!==409))throw new Error(j.error||`The OBS PC said ${r.status}`);
     startingUntil=Date.now()+45000;showDown({starting:true});toast("Starting OBS…");
     clearTimeout(retryT);retry=0;retryT=setTimeout(connect,4000)}
   catch(e){toast(e.message,true)}};
@@ -552,46 +634,90 @@ $("btnStartObs").onclick=async()=>{buzz();
 async function loadAll(){
   await Promise.all([loadScenes(),loadOutputs(),loadAudio(),loadDevices(),loadTransitions(),loadAss()]).catch(fail);
 }
+obs.on("CurrentSceneCollectionChanged",()=>loadAll());
 
 /* ---------- scenes ---------- */
 async function loadScenes(){
-  const [list,studio]=await Promise.all([obs.call("GetSceneList"),obs.call("GetStudioModeEnabled")]);
+  const [list,studio,coll]=await Promise.all([obs.call("GetSceneList"),obs.call("GetStudioModeEnabled"),obs.call("GetSceneCollectionList").catch(()=>({}))]);
   S.scenes=list.scenes.slice().sort((a,b)=>b.sceneIndex-a.sceneIndex).map(s=>s.sceneName);
   S.program=list.currentProgramSceneName;S.studio=studio.studioModeEnabled;S.preview=S.studio?list.currentPreviewSceneName:"";
-  renderScenes();refreshLiveSources();
+  S.collection=coll.currentSceneCollectionName||"";$("title").textContent=S.collection||"OBS";
+  await loadFavs();
+  renderScenes();refreshLiveSources();renderPageIfOpen();
+  if(S.tab==="tabLive")loadSceneThumbs();
 }
+const visibleScenes=()=>{const f=S.fav.size?S.scenes.filter(n=>S.fav.has(n)):[];
+  // no favourites: every scene is a key. Favourites: those, plus whatever is on air or in preview.
+  return f.length?S.scenes.filter(n=>S.fav.has(n)||n===S.program||n===S.preview):S.scenes};
 function renderScenes(){
-  const vis=S.scenes.filter(n=>!S.hidden.has(n));
-  $("scenes").innerHTML=vis.map(n=>`<button class="scene${n===S.program?" pgm":""}${n===S.preview?" pvw":""}" data-scene="${esc(n)}">${esc(n)}</button>`).join("");
-  $("monitors").classList.toggle("single",!S.studio);$("monPvw").style.display=S.studio?"":"none";
-  $("takeRow").style.display=S.studio?"":"none";
+  const vis=visibleScenes(),starred=vis.length<S.scenes.length||S.scenes.some(n=>S.fav.has(n));
+  $("scenes").innerHTML=vis.map(n=>{const c=n===S.program?"pgm":n===S.preview?"pvw":"";
+    return `<button class="key ${c}" data-scene="${esc(n)}"><span class="th"><img data-th="${esc(n)}" alt=""${S.sthumbs[n]?` src="${S.sthumbs[n]}"`:""}></span><span class="kn">${esc(n)}</span>${c?`<span class="tally">${c==="pgm"?"PGM":"PVW"}</span>`:""}</button>`}).join("")
+    +(starred?`<button class="key all" data-all><span class="th">${S.scenes.length}</span><span class="kn">All scenes</span></button>`:"");
+  if(!S.scenes.length)$("scenes").innerHTML=`<div class="empty">${obs.ready?"No scenes in this collection.":"Not connected to OBS."}</div>`;
+  const nf=S.scenes.filter(n=>S.fav.has(n)).length;
+  $("btnFav").innerHTML=(nf?ICON.starOn:ICON.star)+(nf?`${nf} favourites`:"Pick favourites");
+  $("btnFav").hidden=S.scenes.length<2;
+  $("monitors").classList.toggle("single",!S.studio);$("monPvw").hidden=!S.studio;
+  $("takeRow").hidden=!S.studio;
   $("namePgm").textContent=S.program;$("namePvw").textContent=S.preview;
-  $("sceneHint").textContent=S.studio?"Scenes · tap = preview, then TAKE":"Scenes · tap = go live";
+  $("sceneHint").textContent=S.studio?"· tap to preview":"· tap to go live";
 }
-$("scenes").addEventListener("click",e=>{
-  const b=e.target.closest("[data-scene]");if(!b)return;const n=b.dataset.scene;buzz();
+function useScene(n){buzz();
   if(S.studio)obs.call("SetCurrentPreviewScene",{sceneName:n}).catch(fail);
   else obs.call("SetCurrentProgramScene",{sceneName:n}).catch(fail);
-});
+  setTimeout(()=>sceneThumb(n),700)}  // refresh its key once it has switched
+$("scenes").addEventListener("click",e=>{
+  if(e.target.closest("[data-all]"))return openScenes();
+  const b=e.target.closest("[data-scene]");if(!b)return;useScene(b.dataset.scene)});
+$("btnFav").onclick=()=>openScenes();
+/* Favourites live in OBS (obs-websocket persistent data), per scene collection, so every phone shows the same keys. */
+const FAVS={realm:"OBS_WEBSOCKET_DATA_REALM_PROFILE",slotName:"obs-remote.favourites"};
+async function loadFavs(){
+  const r=await obs.call("GetPersistentData",FAVS).catch(()=>null);
+  S.favAll=r?.slotValue&&typeof r.slotValue==="object"?r.slotValue:{};
+  S.fav=new Set(S.favAll[S.collection]||[])}
+function saveFavs(){S.favAll={...(S.favAll||{}),[S.collection]:S.scenes.filter(n=>S.fav.has(n))};
+  return obs.call("SetPersistentData",{...FAVS,slotValue:S.favAll}).catch(fail)}
+/* Scene thumbnails: small screenshots, taken while the Switcher is open and when a scene is tapped. Program and
+   preview keys follow the monitor pictures instead, which are fetched anyway. */
+function setThumb(n,url){S.sthumbs[n]=url;document.querySelectorAll(`img[data-th="${CSS.escape(n)}"]`).forEach(i=>{if(i.src!==url)i.src=url})}
+async function sceneThumb(n){if(!obs.ready)return;
+  try{const r=await obs.call("GetSourceScreenshot",{sourceName:n,imageFormat:"jpg",imageWidth:192,imageCompressionQuality:50});setThumb(n,r.imageData)}catch{}}
+let thumbsBusy=false;
+async function loadSceneThumbs(){if(thumbsBusy||!obs.ready)return;thumbsBusy=true;
+  try{for(const n of visibleScenes()){if(S.tab!=="tabLive"||document.hidden)break;if(n!==S.program&&n!==S.preview)await sceneThumb(n)}}
+  finally{thumbsBusy=false}}
 // TAKE = studio-mode transition using OBS's selected transition (e.g. Fade 300 ms), shown on the button
 S.trans={name:"",duration:0};
 async function loadTransitions(){
-  const cur=await obs.call("GetCurrentSceneTransition");
-  S.trans={name:cur.transitionName,duration:cur.transitionDuration||0};renderTake();
+  const [cur,list]=await Promise.all([obs.call("GetCurrentSceneTransition"),obs.call("GetSceneTransitionList").catch(()=>({transitions:[]}))]);
+  S.trans={name:cur.transitionName,duration:cur.transitionDuration||0};
+  S.cutName=(list.transitions||[]).find(t=>t.transitionKind==="cut_transition")?.transitionName||"";
+  renderTake();
 }
 function renderTake(){
   const t=S.trans,fixed=/cut/i.test(t.name||"");
-  $("btnTake").innerHTML=`<span class="lbl">TAKE${ICON.take}</span><small>${esc(t.name||"")}${!fixed&&t.duration?` ${t.duration} ms`:""}</small>`;
+  $("btnTake").innerHTML=`TAKE${ICON.take}<small>${esc(t.name||"")}${!fixed&&t.duration?` · ${t.duration} ms`:""}</small>`;
+  $("btnCut").hidden=!S.cutName;$("takeRow").style.gridTemplateColumns=S.cutName?"":"1fr";
 }
 $("btnTake").onclick=()=>{buzz(25);obs.call("TriggerStudioModeTransition").catch(fail)};
-obs.on("CurrentSceneTransitionChanged",()=>loadTransitions().catch(()=>{}));
+// CUT = the same TAKE with OBS's Cut transition, then the chosen transition is put back.
+let cutting=false;
+$("btnCut").onclick=async()=>{if(cutting||!S.cutName)return;buzz(25);
+  const keep=S.trans.name;if(!keep||keep===S.cutName)return obs.call("TriggerStudioModeTransition").catch(fail);
+  cutting=true;
+  try{await obs.call("SetCurrentSceneTransition",{transitionName:S.cutName});await obs.call("TriggerStudioModeTransition")}
+  catch(e){fail(e)}
+  finally{await obs.call("SetCurrentSceneTransition",{transitionName:keep}).catch(()=>{});cutting=false;loadTransitions().catch(()=>{})}};
+obs.on("CurrentSceneTransitionChanged",()=>{if(!cutting)loadTransitions().catch(()=>{})});
 obs.on("CurrentSceneTransitionDurationChanged",d=>{S.trans.duration=d.transitionDuration;renderTake()});
 obs.on("CurrentProgramSceneChanged",d=>{S.program=d.sceneName;renderScenes();refreshLiveSources()});
 obs.on("CurrentPreviewSceneChanged",d=>{S.preview=d.sceneName;renderScenes()});
 obs.on("StudioModeStateChanged",()=>loadScenes().catch(fail));
 ["SceneCreated","SceneRemoved","SceneNameChanged","SceneListChanged"].forEach(ev=>obs.on(ev,()=>loadScenes().catch(fail)));
 
-// which sources are visible in the program (one level of nested scenes/groups) -> ON AIR warning
+// which sources are visible in the program (one level of nested scenes/groups) -> ON AIR warning, live-only audio
 async function refreshLiveSources(){
   const live=new Set(),seen=new Set();
   async function walk(scene,depth){
@@ -605,34 +731,67 @@ async function refreshLiveSources(){
 }
 obs.on("SceneItemEnableStateChanged",d=>{if(d.sceneName===S.program||S.liveSources.has(d.sceneName))refreshLiveSources()});
 
-/* ---------- outputs ---------- */
-async function loadOutputs(){
-  const [st,rc,stats]=await Promise.all([obs.call("GetStreamStatus"),obs.call("GetRecordStatus"),obs.call("GetStats")]);
-  S.stream=st;S.rec=rc;renderOutputs(stats);
+/* ---------- stream and recording ----------
+   Status lives in the header tags. Tapping either opens a sheet: starting asks first (YouTube questions where
+   OBS needs them); stopping is a one-second hold, so a stray tap can't end the service. */
+async function loadOutputs(withStats){
+  const [st,rc,stats]=await Promise.all([obs.call("GetStreamStatus"),obs.call("GetRecordStatus"),withStats?obs.call("GetStats"):null]);
+  S.stream=st;S.rec=rc;if(stats)S.stats=stats;renderOutputs();
 }
-function renderOutputs(stats){
-  const s=S.stream.outputActive,r=S.rec.outputActive,rp=S.rec.outputPaused;
-  $("btnStream").className=s?"on":"";$("streamL").textContent=s?"Stop stream":"Start stream";
-  $("streamT").textContent=s?(S.stream.outputReconnecting?"reconnecting…":tc(S.stream.outputTimecode)):"off";
-  $("btnRec").className=r?"on":"";$("recL").textContent=r?"Stop recording":"Start recording";
-  $("recT").textContent=r?(rp?"paused ":"")+tc(S.rec.outputTimecode):"off";
-  $("pillStream").className="pill"+(s?" live":"");$("pillStreamT").textContent=s?"LIVE "+tc(S.stream.outputTimecode):"OFF AIR";
-  $("pillRec").className="pill"+(r?" rec":"");$("pillRecT").textContent=r?"REC "+tc(S.rec.outputTimecode):"REC";
-  $("pillRec").style.display=r?"":"none";
-  if(stats){const p=[`CPU ${stats.cpuUsage.toFixed(0)}%`,`${stats.activeFps.toFixed(1)} fps`];
-    if(stats.renderSkippedFrames)p.push(`render skipped ${stats.renderSkippedFrames}`);
-    if(s){const sk=S.stream.outputSkippedFrames,tot=S.stream.outputTotalFrames;p.push(`dropped ${sk}${tot?` (${(100*sk/tot).toFixed(1)}%)`:""}`);
-      if(S.stream.outputCongestion>0.1)p.push(`congestion ${(S.stream.outputCongestion*100).toFixed(0)}%`)}
-    $("stats").textContent=p.join(" · ")}
+function statsParts(){const st=S.stats;if(!st)return null;const s=S.stream.outputActive;
+  const dropped=s?S.stream.outputSkippedFrames:0,tot=s?S.stream.outputTotalFrames:0;
+  // warnings, each as [label, value]: frames OBS's renderer couldn't draw in time (since OBS started),
+  // and network congestion while streaming
+  const x=[];if(st.renderSkippedFrames)x.push(["Frames skipped in rendering",String(st.renderSkippedFrames)]);
+  if(s&&S.stream.outputCongestion>0.1)x.push(["Network congestion",(S.stream.outputCongestion*100).toFixed(0)+"%"]);
+  return{cpu:st.cpuUsage.toFixed(0)+"%",fps:st.activeFps.toFixed(1),dropped:s?`${dropped}${tot?` (${(100*dropped/tot).toFixed(1)}%)`:""}`:"–",extra:x}}
+function renderOutputs(){
+  // not connected: no Go live / Record to offer (they'd only fail); the Start OBS banner says what's wrong
+  $("tagStream").hidden=$("tagRec").hidden=!obs.ready;
+  const s=!!S.stream.outputActive,r=!!S.rec.outputActive,rp=S.rec.outputPaused,rc=S.stream.outputReconnecting;
+  $("tagStream").className="tag "+(s?(rc?"warn":"on"):"act");
+  $("tagStreamT").innerHTML=s?(rc?"Reconnecting":`<span class="lw">LIVE </span>${tc(S.stream.outputTimecode)}`):"Go live";
+  $("tagStream").ariaLabel=s?(rc?"Stream reconnecting: stream and recording controls":"Live: stream and recording controls"):"Go live";
+  $("tagRec").className="tag "+(r?"on":"act");
+  $("tagRecT").innerHTML=r?`<span class="lw">${rp?"PAUSED":"REC"} </span>${tc(S.rec.outputTimecode)}`:"Record";
+  $("tagRec").ariaLabel=r?"Recording: stream and recording controls":"Record";
+  // the sheet, if it's open
+  if($("oStream")){
+    $("oStream").innerHTML=s?(rc?`<span class="warn">Reconnecting…</span>`:`<span class="live">Live</span> · ${tc(S.stream.outputTimecode)}`):"Not streaming";
+    $("oRec").innerHTML=r?`<span class="live">${rp?"Paused":"Recording"}</span> · ${tc(S.rec.outputTimecode)}`:"Not recording";
+    setHold($("hStream"),s,"Go live");setHold($("hRec"),r,"Record")}
+  renderMenuStats();
 }
-$("btnStream").onclick=async()=>{
-  if(S.stream.outputActive)return confirmSheet("Stop the stream?","Viewers will be disconnected straight away.","Stop stream",true,()=>obs.call("StopStream").then(()=>toast("Stream stopping")).catch(fail));
+function setHold(b,on,startLabel){if(!b||b.dataset.holding)return;b.classList.toggle("go",!on);b.querySelector("span").textContent=on?"Hold to stop":startLabel}
+function openOutputs(){
+  sheet(`<h3>Stream and recording</h3><p>Starting asks first. Stopping needs a press and hold, so a stray tap can't end it.</p>
+    <div class="out"><div class="oname">${ICON.broadcast}<div><b>Stream</b><span id="oStream"></span></div></div><button class="hold" id="hStream"><i class="fill"></i><span></span></button></div>
+    <div class="out"><div class="oname">${ICON.rec}<div><b>Recording</b><span id="oRec"></span></div></div><button class="hold" id="hRec"><i class="fill"></i><span></span></button></div>
+    <div class="btns one"><button data-close>Done</button></div>`,()=>{
+    renderOutputs();
+    holdToStop($("hStream"),()=>S.stream.outputActive,startStream,
+      ()=>obs.call("StopStream").then(()=>toast("Stream stopping")).catch(fail));
+    holdToStop($("hRec"),()=>S.rec.outputActive,
+      ()=>confirmSheet("Start recording?","Records to the OBS PC's recording folder.","Record",false,()=>obs.call("StartRecord").catch(fail)),
+      ()=>obs.call("StopRecord").then(r=>toast("Saved: "+(r.outputPath||"").split(/[\\/]/).pop())).catch(fail))})}
+$("tagStream").onclick=$("tagRec").onclick=()=>{buzz();openOutputs()};
+// Off: a tap starts (after asking). On: hold one second to stop; letting go early does nothing.
+function holdToStop(b,isOn,start,stop){let raf=0,t0=0;const fill=b.querySelector(".fill");
+  const reset=()=>{cancelAnimationFrame(raf);raf=0;fill.style.transform="scaleX(0)";delete b.dataset.holding;renderOutputs()};
+  b.addEventListener("click",()=>{if(!isOn())start()});
+  b.addEventListener("pointerdown",e=>{if(!isOn())return;try{b.setPointerCapture(e.pointerId)}catch{}b.dataset.holding=1;t0=performance.now();
+    b.querySelector("span").textContent="Keep holding…";
+    const step=now=>{const p=Math.min(1,(now-t0)/1000);fill.style.transform=`scaleX(${p})`;
+      if(p<1)raf=requestAnimationFrame(step);else{buzz(40);reset();stop()}};raf=requestAnimationFrame(step)});
+  ["pointerup","pointercancel","lostpointercapture"].forEach(ev=>b.addEventListener(ev,()=>{if(raf)reset()}));
+  b.addEventListener("contextmenu",e=>e.preventDefault())}
+async function startStream(){
   const yt=await ytAccount();
   // a broadcast already set up in OBS (Manage Broadcast on the PC): OBS streams to it, no questions
   const ready=yt&&await fetch("/api/youtube",{cache:"no-store"}).then(r=>r.ok?r.json():{}).then(j=>j.ready).catch(()=>false);
   if(ready)return confirmSheet("Start the stream?","OBS will go live to the YouTube broadcast already set up in OBS.","Go live",true,()=>obs.call("StartStream").then(()=>toast("Stream starting")).catch(fail));
   if(yt)return ytSheet(yt);
-  confirmSheet("Start the stream?","OBS will go live to the configured service.","Go live",true,()=>obs.call("StartStream").then(()=>toast("Stream starting")).catch(fail))};
+  confirmSheet("Start the stream?","OBS will go live to the configured service.","Go live",true,()=>obs.call("StartStream").then(()=>toast("Stream starting")).catch(fail))}
 
 /* ---------- Go live on YouTube (OBS signed in to a YouTube account) ----------
    Signed in (rather than using a stream key), OBS won't stream until its "YouTube Broadcast Setup" dialog is filled
@@ -692,35 +851,29 @@ async function ytGoLive(f){if(ytBusy)return;buzz();
     lock(false);$("scrim").classList.remove("show");toast(f.dryRun?j.error:"Going live on YouTube")}
   catch(e){lock(false);sheet(`<h3>Couldn't go live</h3><p>${esc(e.message)}</p><div class="btns one"><button data-close>OK</button></div>`)}
   finally{ytBusy=false}}
-$("btnRec").onclick=()=>S.rec.outputActive
-  ?confirmSheet("Stop recording?","The file will be finalised on the OBS PC.","Stop recording",true,()=>obs.call("StopRecord").then(r=>toast("Saved: "+(r.outputPath||"").split(/[\\/]/).pop())).catch(fail))
-  :confirmSheet("Start recording?","Records to the OBS PC's recording folder.","Record",false,()=>obs.call("StartRecord").catch(fail));
+obs.on("StreamStateChanged",()=>loadOutputs().catch(()=>{}));
+obs.on("RecordStateChanged",()=>loadOutputs().catch(()=>{}));
+// timecodes in the tags tick while something is running; stats only while the ⋮ menu shows them
+setInterval(()=>{if(!obs.ready||document.hidden)return;const menu=!$("menu").hidden;
+  if(menu||S.stream.outputActive||S.rec.outputActive||$("oStream"))loadOutputs(menu).catch(()=>{})},1000);
+
 /* Advanced Scene Switcher (obs-advanced-scene-switcher plugin): start/stop its automatic scene switching.
-   S.ass = true/false when OBS has the plugin, null when it doesn't (the row stays hidden). */
-const ASS="AdvancedSceneSwitcher";S.ass=null;S.showAss=store.get("showAss",true);
+   S.ass = true/false when OBS has the plugin, null when it doesn't (nothing about it is shown). Its switch is
+   in the ⋮ menu. */
+const ASS="AdvancedSceneSwitcher";S.ass=null;
 async function loadAss(){
   try{S.ass=!!(await obs.call("CallVendorRequest",{vendorName:ASS,requestType:"IsAdvancedSceneSwitcherRunning",requestData:{}})).responseData?.isRunning}
   catch{S.ass=null}
-  renderAss();
+  if(!$("menu").hidden)renderMenu();
 }
-function renderAss(){
-  $("assRow").hidden=S.ass===null||!S.showAss;
-  $("btnAss").className=S.ass?"on":"";$("btnAss").setAttribute("aria-checked",String(!!S.ass));
-  $("assT").textContent=S.ass?"On: OBS switches scenes by itself":"Off: scenes change only when you switch them";
-}
-$("btnAss").onclick=()=>{
+function toggleAss(){
   const on=!S.ass,go=()=>obs.call("CallVendorRequest",{vendorName:ASS,requestType:on?"AdvancedSceneSwitcherStart":"AdvancedSceneSwitcherStop",requestData:{}})
-    .then(()=>{S.ass=on;renderAss();toast(on?"Advanced scene switcher on":"Advanced scene switcher off")}).catch(fail).finally(()=>setTimeout(loadAss,800));
-  if(on&&S.stream?.outputActive)confirmSheet("Turn on Advanced scene switcher?","You're live: it may change the program scene straight away, following its rules in OBS.","Turn on",false,go);
+    .then(()=>{S.ass=on;if(!$("menu").hidden)renderMenu();toast(on?"Advanced scene switcher on":"Advanced scene switcher off")}).catch(fail).finally(()=>setTimeout(loadAss,800));
+  if(on&&S.stream?.outputActive){closeMenu();confirmSheet("Turn on Advanced scene switcher?","You're live: it may change the program scene straight away, following its rules in OBS.","Turn on",false,go)}
   else go();
-};
-obs.on("VendorEvent",d=>{if(d.vendorName===ASS&&/^AdvancedSceneSwitcher(Started|Stopped)$/.test(d.eventType)){S.ass=d.eventType.endsWith("Started");renderAss()}});
-setInterval(()=>{if(obs.ready&&!document.hidden&&S.tab==="tabLive"&&S.ass!==null)loadAss()},10000);  // in case an event was missed
-obs.on("StreamStateChanged",()=>loadOutputs().catch(()=>{}));
-obs.on("RecordStateChanged",()=>loadOutputs().catch(()=>{}));
-setInterval(()=>{if(obs.ready&&!document.hidden&&S.tab==="tabLive")loadOutputs().catch(()=>{})},1000);
-setInterval(()=>{if(obs.ready&&!document.hidden&&S.tab!=="tabLive"&&(S.stream.outputActive||S.rec.outputActive))
-  Promise.all([obs.call("GetStreamStatus"),obs.call("GetRecordStatus")]).then(([a,b])=>{S.stream=a;S.rec=b;renderOutputs()}).catch(()=>{})},1000);
+}
+obs.on("VendorEvent",d=>{if(d.vendorName===ASS&&/^AdvancedSceneSwitcher(Started|Stopped)$/.test(d.eventType)){S.ass=d.eventType.endsWith("Started");if(!$("menu").hidden)renderMenu()}});
+setInterval(()=>{if(obs.ready&&!document.hidden&&S.ass!==null)loadAss()},10000);  // in case an event was missed
 
 /* ---------- audio ---------- */
 async function loadAudio(){
@@ -749,29 +902,28 @@ async function loadMixerHidden(){
     if(r.ok)S.mixerHidden=new Set((await r.json()).hidden||[])}catch{}
 }
 // OBS writes the file when it saves the collection, so look again now and then
-setInterval(()=>{if(obs.ready&&!document.hidden&&S.tab==="tabLive"&&S.showAudio&&S.audio)loadMixerHidden().then(renderAudio)},30000);
+setInterval(()=>{if(obs.ready&&!document.hidden&&S.tab==="tabAudio"&&S.audio)loadMixerHidden().then(renderAudio)},30000);
 function renderAudio(){
-  $("audioHead").hidden=$("audio").hidden=!S.showAudio;  // Settings → Live tab → Audio
   const list=S.audio.filter(a=>!S.mixerHidden.has(a.name)&&(S.showAllAudio||a.special||S.liveSources.has(a.name)));
   $("btnAllAudio").textContent=S.showAllAudio?"Live only":"Show all";
   const bar=`<div class="mbar"><i class="cv"></i><i class="hd"></i></div>`;
   $("audio").innerHTML=list.length?list.map(a=>`<div class="arow"><div class="ainfo"><div class="atop"><span class="n">${esc(a.name)}</span><span class="db">−∞ dB</span></div>
       <div class="meter${a.muted?" muted":""}" data-meter="${esc(a.name)}">${bar}${bar}</div></div>
-      <button class="amon${monOn(a)?" on":""}" data-mon="${esc(a.name)}" aria-label="Monitor ${esc(a.name)}">${ICON.headphones}</button>
-      <button class="${a.muted?"muted":""}" data-mute="${esc(a.name)}">${a.muted?ICON.volOff+"Muted":ICON.speaker+"On"}</button></div>`).join("")
-    :`<div class="empty">No audio sources in the live scene.</div>`;
+      <button class="amon${monOn(a)?" on":""}" data-mon="${esc(a.name)}" aria-label="Monitor ${esc(a.name)}" title="${monOn(a)?"Heard when you Listen":"Not heard when you Listen"}">${ICON.headphones}</button>
+      <button class="mute${a.muted?" muted":""}" data-mute="${esc(a.name)}">${a.muted?ICON.volOff+"Muted":ICON.speaker+"On"}</button></div>`).join("")
+    :`<div class="empty">${obs.ready?"No audio sources in the live scene.":"Not connected to OBS."}</div>`;
   renderListen();
 }
 $("btnAllAudio").onclick=()=>{S.showAllAudio=!S.showAllAudio;renderAudio()};
 $("audio").addEventListener("click",e=>{const m=e.target.closest("[data-mon]");if(m){buzz();toggleMonitor(m.dataset.mon);return}
   const b=e.target.closest("[data-mute]");if(!b)return;buzz();obs.call("ToggleInputMute",{inputName:b.dataset.mute}).catch(fail)});
 // volume meters: OBS sends InputVolumeMeters ~20x/s ([magnitude, peak, inputPeak] per channel, linear).
-// Always subscribed (see OBS.subs); about 9 KB/s, ignored while the Live tab isn't on screen.
+// Always subscribed (see OBS.subs); about 9 KB/s, ignored while the Audio tab isn't on screen.
 const LV={};
 const toDb=m=>m>0?20*Math.log10(m):-100;
 // A muted source's level is zeroed in [1], but [2] (before the fader) isn't: like OBS's own mixer, show that
 // times the fader, greyed out by the .muted style.
-obs.on("InputVolumeMeters",d=>{if(S.tab!=="tabLive"||!S.showAudio||document.hidden)return;const now=performance.now();
+obs.on("InputVolumeMeters",d=>{if(S.tab!=="tabAudio"||document.hidden)return;const now=performance.now();
   for(const i of d.inputs){const L=LV[i.inputName]??={ch:[{db:-100,hold:-100,holdT:0},{db:-100,hold:-100,holdT:0}],at:0};
     const chs=i.inputLevelsMul;if(!chs.length)continue;L.at=now;
     const a=S.audio.find(x=>x.name===i.inputName),muted=a&&a.muted,vol=a&&a.vol!=null?a.vol:1;
@@ -780,7 +932,7 @@ obs.on("InputVolumeMeters",d=>{if(S.tab!=="tabLive"||!S.showAudio||document.hidd
 let meterLast=performance.now();
 (function meterLoop(now){
   const dt=Math.min((now-meterLast)/1000,0.25);meterLast=now;
-  if(S.tab==="tabLive"&&!document.hidden)for(const m of document.querySelectorAll("[data-meter]")){
+  if(S.tab==="tabAudio"&&!document.hidden)for(const m of document.querySelectorAll("[data-meter]")){
     const L=LV[m.dataset.meter],live=L&&now-L.at<1000;m.classList.toggle("idle",!live);
     const bars=m.children;let top=-100;
     for(let k=0;k<2;k++){const s=live?L.ch[k]:{db:-100,hold:-100,holdT:0};
@@ -801,12 +953,11 @@ obs.on("SourceFilterSettingsChanged",d=>{const dev=S.devices.find(x=>x.source===
 
 /* ---------- monitors (OBS-rendered frames) ----------
    A GetSourceScreenshot costs OBS ~8 ms and doesn't disturb its render loop (measured), so we pull
-   frames back-to-back up to the canvas rate (25 fps). Only one request per monitor is in flight, so a
+   frames back-to-back up to the Picture setting's rate. Only one request per monitor is in flight, so a
    slow Wi-Fi link just lowers the frame rate instead of piling up. Each frame is decoded off-screen
    before it is swapped in, so there is no flicker. */
 const FPS={smooth:25,balanced:10,saver:2};
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const shotErr={},fpsCount={};
+const shotErr={},fpsCount={},keyAt={};
 async function frame(src,imgId,w,q,still){
   if(!src||(shotErr[src]&&performance.now()-shotErr[src]<1500))return; // e.g. camera offline: retry slowly
   let r;try{r=await obs.call("GetSourceScreenshot",{sourceName:src,imageFormat:"jpg",imageWidth:w,imageCompressionQuality:q})}
@@ -819,19 +970,21 @@ async function frame(src,imgId,w,q,still){
   if(still&&!still())return;
   const old=$(imgId);if(!old)return;im.id=imgId;im.alt="";old.replaceWith(im);
   fpsCount[imgId]=(fpsCount[imgId]||0)+1;
+  // program and preview keys follow the monitors (at most twice a second)
+  if(imgId!=="imgCam"&&performance.now()-(keyAt[imgId]||0)>500){keyAt[imgId]=performance.now();setThumb(src,r.imageData)}
 }
 async function shotLoop(){
   for(;;){
-    if(!obs.ready||document.hidden){await sleep(300);continue}
+    if(!obs.ready||document.hidden||S.tab==="tabAudio"){await sleep(300);continue}
     const t0=performance.now();
     if(S.tab==="tabLive")await Promise.all([frame(S.program,"imgPgm",480,55),S.studio&&frame(S.preview,"imgPvw",480,55)]);
-    else{const d=curDev();if(d){const src=picOf(d);await frame(src,"imgCam",640,62,()=>S.tab!=="tabLive"&&picOf(curDev())===src)}}
+    else{const d=curDev();if(d){const src=picOf(d);await frame(src,"imgCam",640,62,()=>S.tab==="tabCam"&&picOf(curDev())===src)}else await sleep(300)}
     const wait=1000/(FPS[S.quality]||25)-(performance.now()-t0);
     await sleep(Math.max(wait,4));
   }
 }
 setInterval(()=>{ // small fps readout on each monitor
-  for(const id of ["imgPgm","imgPvw","imgCam"]){const el=$(id+"Fps");if(el)el.textContent=(fpsCount[id]||0)+" fps";fpsCount[id]=0}},1000);
+  for(const id of ["imgPgm","imgPvw","imgCam"]){const el=$(id+"Fps");if(el)el.textContent=fpsCount[id]?fpsCount[id]+" fps":"";fpsCount[id]=0}},1000);
 
 /* ---------- PTZ ---------- */
 const curDev=()=>S.devices.find(d=>d.device===S.dev);
@@ -864,7 +1017,7 @@ async function loadCaps(source){
 const capOf=k=>curDev()?.caps?.[k]??1;
 // The PTZ control can sit on a different source from the picture, e.g. VISCA on a hidden webcam source "CAM01"
 // while the scene shows "CAM01-NDI". If the PTZ source isn't producing video, use an active source whose name
-// starts with the same name. Settings can override this per camera.
+// starts with the same name.
 async function autoPicture(source){
   const active=n=>obs.call("GetSourceActive",{sourceName:n}).then(r=>r.videoActive||r.videoShowing).catch(()=>false);
   if(await active(source))return source;
@@ -872,8 +1025,8 @@ async function autoPicture(source){
   for(const n of (S.videoInputs||[]).filter(n=>n!==source&&n.toLowerCase().startsWith(low)))if(await active(n))return n;
   return source;
 }
-// Per-camera display names and picture sources live in OBS itself (obs-websocket persistent data, profile realm),
-// so every phone sees the same names. Cameras are listed in natural name order (CAM01, CAM02, CAM03, CAM03-USB…).
+// Names and picture sources saved in OBS by earlier versions (Settings → Cameras) are still honoured, so a camera
+// set up that way keeps working. The app no longer edits them: cameras otherwise show their OBS source names.
 const CAMCFG={realm:"OBS_WEBSOCKET_DATA_REALM_PROFILE",slotName:"obs-remote.cameras"};
 async function loadCamCfg(){
   const r=await obs.call("GetPersistentData",CAMCFG).catch(()=>null);const v=r?.slotValue;
@@ -883,36 +1036,52 @@ const nameOf=d=>d?(S.camCfg?.names?.[d.source]||d.source):"";
 const picOf=d=>d?(S.camCfg?.pictures?.[d.source]||d.auto||d.source):"";
 const isLive=d=>!!d&&(S.liveSources.has(d.source)||S.liveSources.has(picOf(d)));
 function renderCams(){
-  $("camList").innerHTML=S.devices.length?S.devices.map(d=>`<button class="chip${d.device===S.dev?" sel":""}" data-dev="${d.device}"><span class="dot ${d.state.connected?"ok":""}"></span>${esc(nameOf(d))}${isLive(d)?" · LIVE":""}</button>`).join("")
-    :S.ptzMissing?`<div class="empty">OBS has no PTZ control for this app. It needs obs-ptz <b>1.0 (beta)</b> or newer with Settings → Websocket access = “Control”. The stable 0.19.x release has no websocket control. Everything on the Live tab still works.</div>`
-    :`<div class="empty">No PTZ cameras found. Is the obs-ptz plugin loaded, with websocket access set to “Control”?</div>`;
+  $("camList").innerHTML=S.devices.length?S.devices.map(d=>`<button class="chip${d.device===S.dev?" sel":""}" data-dev="${d.device}"><span class="dot ${d.state.connected?"ok":""}"></span>${esc(nameOf(d))}${isLive(d)?'<span class="air">ON AIR</span>':""}</button>`).join("")
+    :S.ptzMissing?`<div class="empty">OBS has no PTZ control for this app. It needs obs-ptz <b>1.0 (beta)</b> or newer with Settings → Websocket access = “Control”. The stable 0.19.x release has no websocket control. Everything on the Switcher still works.</div>`
+    :`<div class="empty">${obs.ready?"No PTZ cameras found. Is the obs-ptz plugin loaded, with websocket access set to “Control”?":"Not connected to OBS."}</div>`;
   const d=curDev();
   $("onair").classList.toggle("show",isLive(d));
   $("camMon").classList.toggle("pgm",isLive(d));
   if(d){const f=d.state.features||{};
     const pn=picOf(d)!==d.source?` (picture: ${picOf(d)})`:"";
     $("camState").textContent=(d.state.connected?`${nameOf(d)} · ${d.kind.replace(" PTZ Control","")}`:`${nameOf(d)} · camera not connected`)+pn;
-    $("focusRow").style.display=f.focus?"":"none";
-    $("afL").textContent=f.autofocus?(d.state.focus_af_enabled===false?"Auto off":"Auto on"):"Auto";
-    $("btnAF").title=$("btnAF").ariaLabel=f.autofocus?(d.state.focus_af_enabled===false?"Auto focus is off":"Auto focus is on"):"Auto focus";
+    $("focusRow").hidden=!f.focus;
+    $("afL").textContent=f.autofocus?(d.state.focus_af_enabled===false?"Manual focus":"Auto focus"):"Auto focus";
+    $("btnAF").classList.toggle("on",!!f.autofocus&&d.state.focus_af_enabled!==false);
+    $("btnAF").title=$("btnAF").ariaLabel=f.autofocus?(d.state.focus_af_enabled===false?"Auto focus is off: tap to turn it on":"Auto focus is on: tap to turn it off"):"Auto focus";
     $("btnAF").disabled=!f.autofocus;
     document.querySelectorAll("[data-zoom]").forEach(b=>b.disabled=!f.zoom);
-  }
+  }else $("camState").textContent="";
   $("camPrev").hidden=$("camNext").hidden=S.devices.length<2;
   camInd();
   renderAudio();camFade();if(S.tab==="tabCam")camNudge();
+  if(!$("menu").hidden)renderMenu();
 }
 // Highlight behind the selected chip. renderCams() rebuilds the chips, so start it where it was and let it slide.
 // One highlight element for the life of the page (only the chip list is rebuilt), so a slide in progress
 // carries on even when a camera's state update re-renders the chips mid-way.
-function camInd(){const c=$("cams"),ind=c.querySelector(".ind"),sel=c.querySelector(".chip.sel");
+function camInd(jump){const c=$("cams"),ind=c.querySelector(".ind"),list=$("camList"),sel=list.querySelector(".chip.sel");
   if(!sel){ind.hidden=true;return}
   if(!sel.offsetWidth)return;  // tab hidden: placed when it's shown
-  const first=ind.hidden;ind.hidden=false;
-  if(first){ind.style.transition="none"}
-  Object.assign(ind.style,{left:sel.offsetLeft+"px",top:sel.offsetTop+"px",width:sel.offsetWidth+"px",height:sel.offsetHeight+"px"});
-  if(first){ind.offsetWidth;ind.style.transition=""}}
-addEventListener("resize",()=>{const i=$("cams").querySelector(".ind");i.style.transition="none";camInd();i.offsetWidth;i.style.transition=""});
+  // the dark copy of the row, lined up with the real one (no ids, no data-dev: it's only paint)
+  const t=ind.firstElementChild;t.innerHTML=list.innerHTML;t.querySelectorAll(".chip").forEach(x=>{x.classList.remove("sel");x.removeAttribute("data-dev");x.tabIndex=-1});
+  t.style.left=list.offsetLeft+"px";t.style.top=list.offsetTop+"px";
+  jump=jump||ind.hidden;ind.hidden=false;
+  ind.classList.toggle("drag",!!jump);   // first showing / resize: place it without sliding
+  placeInd(sel.offsetLeft,sel.offsetTop,sel.offsetWidth,sel.offsetHeight);
+  if(jump){ind.offsetWidth;ind.classList.remove("drag")}}
+// transform + width only (no left/top), so the browser can slide it smoothly; the dark copy moves the other way
+function placeInd(x,y,w,h){const ind=$("cams").querySelector(".ind");
+  ind.style.transform=`translate(${x}px,${y}px)`;ind.style.width=w+"px";ind.style.height=h+"px";
+  ind.firstElementChild.style.transform=`translate(${-x}px,${-y}px)`}
+// During a swipe on the picture the highlight follows the finger part of the way toward the camera it will switch to
+// (frac 0..1); letting go finishes the slide (or springs back) with the usual easing.
+function camIndToward(dev,frac){const c=$("cams"),ind=c.querySelector(".ind"),list=$("camList"),a=list.querySelector(".chip.sel"),
+  b=dev&&list.querySelector(`.chip[data-dev="${CSS.escape(dev)}"]`);
+  if(!a||ind.hidden)return;if(!b||!frac){if(ind.classList.contains("drag"))camInd();return}
+  ind.classList.add("drag");const l=(p,q)=>p+(q-p)*frac;
+  placeInd(l(a.offsetLeft,b.offsetLeft),l(a.offsetTop,b.offsetTop),l(a.offsetWidth,b.offsetWidth),a.offsetHeight)}
+addEventListener("resize",()=>camInd(true));
 // Camera chips: fade the side(s) that have more cameras, and nudge the row once so a swipe looks possible.
 function camFade(){const c=$("cams"),max=c.scrollWidth-c.clientWidth;
   c.style.setProperty("--fl",c.scrollLeft>2?"36px":"0px");c.style.setProperty("--fr",c.scrollLeft<max-2?"36px":"0px")}
@@ -921,12 +1090,12 @@ let camNudged=false;
 function camNudge(){const c=$("cams");if(camNudged||c.scrollWidth-c.clientWidth<8||c.scrollLeft>2)return;camNudged=true;
   setTimeout(()=>{c.scrollBy({left:48,behavior:"smooth"});setTimeout(()=>c.scrollBy({left:-48,behavior:"smooth"}),450)},350)}
 // Arrows: clear at first, then faded back after 3 s untouched, so they don't sit over the picture.
-let wakeT;function camWake(){const m=$("camMon");m.classList.remove("idle");clearTimeout(wakeT);wakeT=setTimeout(()=>m.classList.add("idle"),3000)}
-$("camMon").addEventListener("pointerdown",camWake);
+let wakeT;function camWake(){const m=$("camView");m.classList.remove("idle");clearTimeout(wakeT);wakeT=setTimeout(()=>m.classList.add("idle"),3000)}
+$("camView").addEventListener("pointerdown",camWake);
 function selectCam(dev){
   if(!dev||dev===S.dev)return;
   stopMove();S.dev=dev;store.set("dev",S.dev);$("imgCam").removeAttribute("src");renderCams();loadPresets();
-  $("cams").querySelector(".chip.sel")?.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"});
+  $("camList").querySelector(".chip.sel")?.scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"});
 }
 $("camList").addEventListener("click",e=>{const b=e.target.closest("[data-dev]");if(b)selectCam(b.dataset.dev)});
 // Swipe the camera picture left/right for the next/previous camera (wraps round). Pointer events, so it
@@ -942,14 +1111,16 @@ $("camList").addEventListener("click",e=>{const b=e.target.closest("[data-dev]")
   const paint=()=>{raf=0;const w=mon.offsetWidth||1,x=S.devices.length<2?dx*.25:dx;  // one camera: rubber band
     mon.style.transform=`translateX(${x}px)`;mon.style.opacity=String(1-Math.min(.5,Math.abs(x)/w*.6));
     const t=S.devices.length>1&&Math.abs(x)>12?target(x<0?1:-1):null;
-    peek.textContent=t?(x<0?`${nameOf(t)} ›`:`‹ ${nameOf(t)}`):"";peek.className="peek "+(x<0?"r":"l");
-    peek.style.opacity=t?String(Math.min(1,Math.abs(x)/(w*.25))):"0"};
+    peek.textContent=t?nameOf(t):"";peek.className="peek "+(x<0?"r":"l");
+    peek.style.opacity=t?String(Math.min(1,Math.abs(x)/(w*.25))):"0";
+    camIndToward(t?.device,t?Math.min(1,Math.abs(x)/w):0)};  // the name pill follows the picture
+  // (the race with a timer: a backgrounded page may never finish the animation)
   const settle=async(to,ms)=>{const from=mon.style.transform||"none",fo=mon.style.opacity||"1";
     const a=mon.animate([{transform:from,opacity:fo},{transform:to,opacity:to==="none"?1:.4}],{duration:ms,easing:"cubic-bezier(.2,.8,.2,1)"});
-    mon.style.transform=to==="none"?"":to;mon.style.opacity=to==="none"?"":".4";try{await a.finished}catch{}};
+    mon.style.transform=to==="none"?"":to;mon.style.opacity=to==="none"?"":".4";try{await Promise.race([a.finished,sleep(ms+80)])}catch{}};
   const end=async()=>{id=null;if(!drag)return;drag=false;if(raf){cancelAnimationFrame(raf);raf=0}
     peek.style.opacity="0";const w=mon.offsetWidth||1,fast=Math.abs(vx)>.5&&Math.sign(vx)===Math.sign(dx);
-    if(S.devices.length<2||(Math.abs(dx)<w*.25&&!fast)){await settle("none",220);return}
+    if(S.devices.length<2||(Math.abs(dx)<w*.25&&!fast)){camInd();await settle("none",220);return}  // pill springs back too
     await go(dx<0?1:-1)};
   const go=async dir=>{if(busy||S.devices.length<2)return;busy=true;const w=mon.offsetWidth||1;
     await settle(`translateX(${-dir*w}px)`,140);              // old camera slides out...
@@ -959,14 +1130,15 @@ $("camList").addEventListener("click",e=>{const b=e.target.closest("[data-dev]")
   $("camPrev").onclick=()=>{buzz();go(-1);camWake()};$("camNext").onclick=()=>{buzz();go(1);camWake()};
   // A swipe can start anywhere on the picture, arrows included. The pointer is only captured once the move is a
   // sideways drag, so a plain tap on an arrow stays an ordinary click.
-  mon.addEventListener("pointerdown",e=>{if(!e.isPrimary||e.button>0||busy)return;
+  mon.parentElement.addEventListener("pointerdown",e=>{if(!e.isPrimary||e.button>0||busy)return;
     id=e.pointerId;sx=lx=e.clientX;sy=e.clientY;lt=e.timeStamp;dx=0;vx=0;drag=false});
-  mon.addEventListener("pointermove",e=>{if(e.pointerId!==id)return;const mx=e.clientX-sx,my=e.clientY-sy;
-    if(!drag){if(Math.abs(mx)>8&&Math.abs(mx)>Math.abs(my)){drag=true;try{mon.setPointerCapture(id)}catch{}}else{if(Math.abs(my)>10)id=null;return}}
-    const dt=e.timeStamp-lt;if(dt>0)vx=.7*vx+.3*((e.clientX-lx)/dt);lx=e.clientX;lt=e.timeStamp;
+  mon.parentElement.addEventListener("pointermove",e=>{if(e.pointerId!==id)return;const mx=e.clientX-sx,my=e.clientY-sy;
+    if(!drag){if(Math.abs(mx)>8&&Math.abs(mx)>Math.abs(my)){drag=true;try{mon.parentElement.setPointerCapture(id)}catch{}}else{if(Math.abs(my)>10)id=null;return}}
+    // flick speed: skip samples that arrive within 8 ms of the last (batched touch events would read as a huge flick)
+    const dt=e.timeStamp-lt;if(dt>=8){vx=.7*vx+.3*((e.clientX-lx)/dt);lx=e.clientX;lt=e.timeStamp}
     dx=mx;if(!raf)raf=requestAnimationFrame(paint)});
-  mon.addEventListener("pointerup",e=>{if(e.pointerId===id)end()});
-  mon.addEventListener("pointercancel",e=>{if(e.pointerId===id){dx=0;end()}});
+  mon.parentElement.addEventListener("pointerup",e=>{if(e.pointerId===id)end()});
+  mon.parentElement.addEventListener("pointercancel",e=>{if(e.pointerId===id){dx=0;if(raf){cancelAnimationFrame(raf);raf=0}camInd();end()}});
 })();
 obs.on("VendorEvent",d=>{
   if(d.vendorName!=="obs-ptz")return;const ed=d.eventData||{};
@@ -974,6 +1146,12 @@ obs.on("VendorEvent",d=>{
     if(dev){Object.assign(dev.state,ed.changed||{});renderCams()}}
   else if(/^ptz_preset_/.test(d.eventType)&&(!ed.device||ed.device===S.dev)&&d.eventType!=="ptz_preset_recalled")loadPresets();
 });
+// Move | Presets: two faces of one panel; the phone remembers the last one
+function applyFace(){document.querySelectorAll(".pseg [data-face]").forEach(b=>{const on=b.dataset.face===S.face;b.classList.toggle("sel",on);b.setAttribute("aria-selected",on)});
+  $("faceMove").hidden=S.face!=="move";$("facePresets").hidden=S.face!=="presets"}
+document.querySelector(".pseg").addEventListener("click",e=>{const b=e.target.closest("[data-face]");if(!b||b.dataset.face===S.face)return;
+  buzz();stopMove();S.face=b.dataset.face;store.set("face",S.face);applyFace()});
+applyFace();
 
 // movement — continuous velocity while held, always stopped on release
 let moving=false,lastSent={p:0,t:0,z:0,f:0},lastAt=0,pendingMove=null,moveTimer=null;
@@ -987,7 +1165,7 @@ function sendMove(p,t,z,f){
     obs.ptz(d.device,"ptz_move",{pan:m.p,tilt:m.t,zoom:m.z,focus:m.f}).catch(fail)};
   if(now-lastAt>90)flush();else if(!moveTimer)moveTimer=setTimeout(flush,90-(now-lastAt));
 }
-// force=true after a joystick/hold gesture or the Stop button; otherwise only stop if we started a move,
+// force=true after a joystick/hold gesture or a Stop button; otherwise only stop if we started a move,
 // so switching tabs doesn't cut short a preset recall that is still travelling
 function stopMove(force){
   const was=moving||!!pendingMove||!!moveTimer;
@@ -1002,7 +1180,7 @@ const curve=v=>{const {dz,min,pow}=CURVE,a=Math.abs(v);if(a<dz)return 0;return M
 
 // joystick
 (function(){
-  const pad=$("pad"),knob=$("knob");let pid=null,startStop=false;
+  const pad=$("pad"),knob=$("knob");let pid=null;
   function at(e){const r=pad.getBoundingClientRect(),R=r.width/2;
     let x=(e.clientX-r.left-R)/R,y=(e.clientY-r.top-R)/R;const m=Math.hypot(x,y);if(m>1){x/=m;y/=m}
     knob.style.transform=`translate(${x*R*0.7}px,${y*R*0.7}px)`;
@@ -1037,35 +1215,34 @@ const HOLD_DELAY=120;
 function holdButton(btn,start){
   let held=false,timer=0;
   btn.addEventListener("pointerdown",e=>{if(btn.disabled)return;try{btn.setPointerCapture(e.pointerId)}catch{}
-    const go=()=>{timer=0;held=true;buzz();start()};
+    const go=()=>{timer=0;held=true;buzz();btn.classList.add("held");start()};
     if(e.pointerType==="touch")timer=setTimeout(go,HOLD_DELAY);else go()});
-  const end=()=>{clearTimeout(timer);timer=0;if(!held)return;held=false;stopMove(true)};
+  const end=()=>{clearTimeout(timer);timer=0;if(!held)return;held=false;btn.classList.remove("held");stopMove(true)};
   ["pointerup","pointercancel","lostpointercapture"].forEach(ev=>btn.addEventListener(ev,end));
   btn.addEventListener("contextmenu",e=>e.preventDefault());
 }
 // Direction buttons: hold to pan/tilt at the Speed slider's speed, release to stop. Diagonals move both axes
-// at full speed. The middle button stops. Arrows point up = 0°, clockwise.
+// at full speed. The middle button stops (grey: releasing already stops, this is the spare). Arrows point up = 0°, clockwise.
 (()=>{
   const dirs=[[-1,-1,315],[0,-1,0],[1,-1,45],[-1,0,270],null,[1,0,90],[-1,1,225],[0,1,180],[1,1,135]];
   const arrow='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
-  const dp=$("dpad");
   const arrowD='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M7 11l5-5 5 5"/></svg>';
+  const dp=$("dpad");
   dp.innerHTML=dirs.map(d=>d?`<button class="${d[0]&&d[1]?"diag":""}" style="--r:${d[2]}deg" data-dx="${d[0]}" data-dy="${d[1]}" aria-label="Move">${d[0]&&d[1]?arrowD:arrow}</button>`
     :`<button class="mid" aria-label="Stop moving">${ICON.stop}</button>`).join("");
-  dp.querySelectorAll("[data-dx]").forEach(b=>{
-    holdButton(b,()=>{b.classList.add("held");sendMove(+(+b.dataset.dx*S.speed*capOf("pan")).toFixed(4),+(-b.dataset.dy*S.speed*capOf("tilt")).toFixed(4),0,0)});
-    ["pointerup","pointercancel","lostpointercapture"].forEach(ev=>b.addEventListener(ev,()=>b.classList.remove("held")))});
-  dp.querySelector(".mid").onclick=()=>{buzz(30);stopMove(true)};
+  dp.querySelectorAll("[data-dx]").forEach(b=>holdButton(b,()=>sendMove(+(+b.dataset.dx*S.speed*capOf("pan")).toFixed(4),+(-b.dataset.dy*S.speed*capOf("tilt")).toFixed(4),0,0)));
+  dp.querySelector(".mid").onclick=()=>{buzz(30);stopMove(true);toast("Stopped")};
 })();
-function applyCtrl(){$("pad").hidden=S.ctrl!=="joystick";$("dpad").hidden=S.ctrl==="joystick"}
+// joystick mode has no middle button, so a Stop sits between the zoom buttons
+$("btnStopJoy").onclick=()=>{buzz(30);stopMove(true);toast("Stopped")};
+function applyCtrl(){const joy=S.ctrl==="joystick";$("pad").hidden=!joy;$("dpad").hidden=joy;$("btnStopJoy").hidden=!joy}
 applyCtrl();
 document.querySelectorAll("[data-zoom]").forEach(b=>holdButton(b,()=>sendMove(0,0,+(+b.dataset.zoom*Math.max(S.speed,0.3)*capOf("zoom")).toFixed(4),0)));
 document.querySelectorAll("[data-focus]").forEach(b=>holdButton(b,()=>sendMove(0,0,0,+(+b.dataset.focus*0.5*capOf("focus")).toFixed(4))));
-$("btnAF").onclick=()=>{const d=curDev();if(!d)return;const on=d.state.focus_af_enabled===false;
+$("btnAF").onclick=()=>{const d=curDev();if(!d)return;const on=d.state.focus_af_enabled===false;buzz();
   obs.ptz(d.device,"ptz_request_state",{state:{focus_af_enabled:on}}).then(()=>{d.state.focus_af_enabled=on;renderCams()}).catch(fail)};
-$("btnStop").onclick=()=>{buzz(30);stopMove(true)};
-// ↻ Refresh: reconnect a frozen picture AND the PTZ link. Network cameras sometimes stall (an NDI|HX receiver keeps
-// showing the last frame) or reboot (obs-ptz doesn't reconnect by itself), while OBS reports nothing wrong.
+// ↻ Refresh (⋮ menu, Camera tab): reconnect a frozen picture AND the PTZ link. Network cameras sometimes stall (an
+// NDI|HX receiver keeps showing the last frame) or reboot (obs-ptz doesn't reconnect by itself), while OBS reports nothing wrong.
 async function refreshPicture(src){
   const r=await obs.call("GetInputSettings",{inputName:src}),k=r.inputKind||"",s=r.inputSettings||{};
   if(/^ndi_source/.test(k)&&s.ndi_source_name){ // DistroAV / obs-ndi: dropping the source and picking it again rebuilds the receiver
@@ -1095,17 +1272,18 @@ async function refreshPtz(d,gap=2500){
 }
 const ptzConnected=async(d,secs)=>{for(let i=0;i<secs;i++){await sleep(1000);
   const st=await obs.ptz(d.device,"ptz_get_state").catch(()=>null);if(st?.state){d.state=st.state;if(d.state.connected)return true}}return false};
-$("btnRefresh").onclick=()=>{const d=curDev();if(!d)return;
-  const go=async()=>{const b=$("btnRefresh");b.disabled=true;stopMove(true);toast("Reconnecting "+nameOf(d)+"…");
+let refreshing=false;
+function refreshCamera(){const d=curDev();if(!d||refreshing)return;
+  const go=async()=>{refreshing=true;stopMove(true);toast("Reconnecting "+nameOf(d)+"…");
     const errs=[];
     await Promise.all([refreshPicture(picOf(d)).catch(e=>errs.push("picture: "+e.message)),refreshPtz(d).catch(e=>errs.push("PTZ: "+e.message))]);
     delete shotErr[picOf(d)];
     // wait for the camera link to come back; one slower retry if it doesn't (e.g. camera still booting)
     if(!errs.length&&!await ptzConnected(d,5)){await refreshPtz(d,4000).catch(()=>{});await ptzConnected(d,8)}
-    b.disabled=false;renderCams();loadPresets();
+    refreshing=false;renderCams();loadPresets();
     if(errs.length)toast(errs.join(" · "),true);
     else toast(d.state.connected?nameOf(d)+" reconnected":nameOf(d)+": picture refreshed, PTZ camera not answering",!d.state.connected)};
-  isLive(d)?confirmSheet("Refresh "+nameOf(d)+"?","This camera is ON AIR. Its picture will drop for a second or two while it reconnects.","Refresh",true,go):go()};
+  isLive(d)?confirmSheet("Refresh "+nameOf(d)+"?","This camera is ON AIR. Its picture will drop for a second or two while it reconnects.","Refresh",true,go):go()}
 // safety: never leave a camera driving when the page loses focus
 document.addEventListener("visibilitychange",()=>{if(document.hidden)stopMove()});
 window.addEventListener("blur",()=>{if(moving)stopMove()});
@@ -1144,13 +1322,13 @@ function renderPresets(){
   else if(!list.length)list=all.filter(p=>!HIK_SPECIAL.test(p.name||"")).slice(0,16);
   $("btnAllPresets").textContent=S.showAllPresets?"Main only":"Show all";
   $("presets").innerHTML=list.length?list.map(p=>{const num=(p.id.split(":")[1]||"");
-    return`<button class="preset" data-preset="${esc(p.id)}"><span class="th" data-th="${esc(p.id)}"${p.thumbnail?"":""}>${p.thumbnail?"":esc(num)}</span><span class="pn">${esc(p.name||p.id)}</span></button>`}).join("")
+    return`<button class="key" data-preset="${esc(p.id)}"><span class="th" data-pth="${esc(p.id)}">${p.thumbnail?"":esc(num)}</span><span class="kn">${esc(p.name||p.id)}</span></button>`}).join("")
     :`<div class="empty">${d&&d.state.connected?"No presets on this camera yet.":"Camera not connected."}</div>`;
   list.filter(p=>p.thumbnail).forEach(p=>loadThumb(d.device,p.id));
 }
 async function loadThumb(dev,id){
   const key=dev+"|"+id;
-  const apply=u=>{const el=document.querySelector(`[data-th="${CSS.escape(id)}"]`);if(el){el.style.backgroundImage=`url("${u}")`;el.textContent=""}};
+  const apply=u=>{const el=document.querySelector(`[data-pth="${CSS.escape(id)}"]`);if(el){el.style.backgroundImage=`url("${u}")`;el.textContent=""}};
   if(S.thumbs[key])return apply(S.thumbs[key]);
   try{const r=await obs.ptz(dev,"ptz_preset_get_thumbnail",{id});if(r.data){S.thumbs[key]=`data:${r.mime||"image/jpeg"};base64,${r.data}`;if(S.dev===dev)apply(S.thumbs[key])}}catch{}
 }
@@ -1164,12 +1342,12 @@ $("btnAllPresets").onclick=()=>{S.showAllPresets=!S.showAllPresets;renderPresets
   ["pointerup","pointercancel","pointerleave"].forEach(ev=>P.addEventListener(ev,()=>{clearTimeout(timer);timer=null}));
   P.addEventListener("contextmenu",e=>e.preventDefault());
   P.addEventListener("click",e=>{const b=e.target.closest("[data-preset]");if(!b||fired)return;const d=curDev();if(!d)return;buzz();
-    document.querySelectorAll(".preset.hit").forEach(x=>x.classList.remove("hit"));b.classList.add("hit");
+    document.querySelectorAll("#presets .key.hit").forEach(x=>x.classList.remove("hit"));b.classList.add("hit");
     obs.ptz(d.device,"ptz_preset_recall",{id:b.dataset.preset}).catch(fail)});
 })();
 function savePreset(id){
   const d=curDev();if(!d)return;const p=(S.presets[d.device]||[]).find(x=>x.id===id);
-  confirmSheet(`Overwrite “${p?.name||id}”?`,`Saves ${nameOf(d)}'s current position into this preset. The old position is lost.`,"Save position",true,
+  confirmSheet(`Overwrite “${p?.name||id}”?`,`Saves ${nameOf(d)}'s current position into this preset. The old position is lost.`,"Save position",false,
     async()=>{try{await obs.ptz(d.device,"ptz_preset_save",{id});delete S.thumbs[d.device+"|"+id];
       await obs.ptz(d.device,"ptz_preset_capture_thumbnail",{id,if_arrived:false}).catch(()=>{});
       toast("Preset saved");setTimeout(loadPresets,800)}catch(e){fail(e)}});
@@ -1211,115 +1389,167 @@ const player={ctx:null,ctrl:null,next:0,on:false,
     if(this.next<now+0.03||this.next>now+0.6)this.next=now+0.15;
     src.start(this.next);this.next+=n/LISTEN_RATE},
   stop(){this.on=false;const c=this.ctrl;this.ctrl=null;try{c&&c.abort()}catch{}renderListen()}};
-function renderListen(){const b=$("btnListen");b.hidden=false;
-  b.classList.toggle("on",player.on);b.innerHTML=`${ICON.headphones}${player.on?"Stop":"Listen"}`}
+function renderListen(){const b=$("btnListen");b.hidden=false;$("listenNote").hidden=false;
+  b.classList.toggle("on",player.on);b.innerHTML=`${ICON.headphones}${player.on?"Stop":"Listen"}`;$("listening").hidden=!player.on}
 $("btnListen").onclick=()=>{buzz();player.on?player.stop():player.start()};
 addEventListener("pagehide",()=>player.stop());
 
 /* ---------- tabs ---------- */
 document.querySelectorAll("nav [data-tab]").forEach(b=>b.onclick=()=>{
-  stopMove();S.tab=b.dataset.tab;
+  stopMove();S.tab=b.dataset.tab;closeMenu();
   document.querySelectorAll("nav [data-tab]").forEach(x=>x.classList.toggle("sel",x===b));
   document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("sel",t.id===S.tab));
   if(S.tab==="tabCam"&&obs.ready)loadDevices().catch(fail);
   if(S.tab==="tabCam")requestAnimationFrame(()=>{camInd();camFade();camNudge();camWake()});
+  if(S.tab==="tabLive")loadSceneThumbs();
+  if(S.tab==="tabAudio"&&obs.ready)loadMixerHidden().then(renderAudio);
   window.scrollTo(0,0)});
 
-/* ---------- settings ---------- */
-function openSettings(force){
-  // scenes: tap the eye to show/hide a scene on the phone
-  const hideRows=S.scenes.map(n=>`<label class="scn"><input type="checkbox" data-hide="${esc(n)}" ${S.hidden.has(n)?"":"checked"}><span class="on">${ICON.eye}</span><span class="off">${ICON.eyeOff}</span><span class="nm">${esc(n)}</span></label>`).join("");
-  // Folded into groups so the sheet stays short; Connection opens by itself when the phone isn't connected.
-  const qName={smooth:"Smooth",balanced:"Balanced",saver:"Data saver"}[S.quality]||"Balanced";
-  const shown=S.scenes.filter(n=>!S.hidden.has(n)).length;
-  const grp=(icon,title,sub,open,body)=>`<details class="grp"${open?" open":""}><summary><i class="gi">${icon}</i><div><b>${title}</b><span>${sub}</span></div></summary><div class="grpb">${body}</div></details>`;
-  const tog=(id,on,icon,title,desc)=>`<label class="tog"><i class="gi">${icon}</i><span><b>${title}</b><small>${desc}</small></span><input type="checkbox" class="sw" id="${id}"${on?" checked":""}></label>`;
-  const qual=[["smooth","Smooth","25 fps",ICON.film],["balanced","Balanced","10 fps",ICON.gauge],["saver","Data saver","2 fps",ICON.leaf]];
-  sheet(`<h3>Settings</h3><div id="sUpd"></div>
-    ${grp(ICON.wifi,"Connection",`${obs.ready?`Connected to ${esc(cfg.host)}${S.via?" via Tailscale":""}`:"Not connected"} · ${qName} picture`,force||!obs.ready,`
-    <div class="field"><label>OBS PC address</label><input id="sHost" value="${esc(cfg.host)}" inputmode="url" autocapitalize="off"></div>
-    <div class="field"><label>Websocket port</label><input id="sPort" value="${esc(cfg.port)}" inputmode="numeric"></div>
-    <div class="field"><label>Websocket password (OBS → Tools → WebSocket Server Settings)</label><input id="sPw" type="password" value="${esc(cfg.pw)}" autocomplete="current-password"></div>
-    <div class="sub">Picture</div>
-    <div class="seg">${qual.map(([v,t,s,i])=>`<label><input type="radio" name="sQ" value="${v}"${(S.quality||"balanced")===v?" checked":""}><span>${i}<b>${t}</b><small>${s}</small></span></label>`).join("")}</div>
-    <div class="note">Smooth uses about 5 Mbit/s of Wi-Fi while the Live tab is open. Use Data saver on mobile data.</div>`)}
-    ${grp(ICON.monitor,"Live tab",[S.scenes.length&&`${shown} of ${S.scenes.length} scenes`,S.showAudio?"":"audio hidden"].filter(Boolean).join(" · ")||"Scenes, audio and switches",false,`
-    ${obs.ready?tog("sStudio",S.studio,ICON.studio,"Studio Mode","Preview a scene first, then TAKE it to program. Changes OBS itself, for everyone"):""}
-    ${S.ass!==null?tog("sShowAss",S.showAss,ICON.shuffle,"Advanced scene switcher","Show its on/off switch on the Live tab"):""}
-    ${tog("sShowAudio",S.showAudio,ICON.speaker,"Audio","Show the audio section: mute buttons and sound meters")}
-    ${S.scenes.length?`<div class="sub">Scenes on the phone <span id="sShown">${shown} of ${S.scenes.length}</span></div><div class="scns">${hideRows}</div>`:""}`)}
-    ${S.devices.length?grp(ICON.camera,"Cameras",`${S.devices.length} PTZ camera${S.devices.length>1?"s":""} · ${S.ctrl==="joystick"?"joystick":"buttons"}`,false,`
-    <div class="sub">Controls</div>
-    <div class="seg two">${[["buttons","Buttons","hold an arrow",ICON.dpad],["joystick","Joystick","push further = faster",ICON.joystick]].map(([v,t,s,i])=>
-      `<label><input type="radio" name="sCtrl" value="${v}"${(S.ctrl==="joystick"?"joystick":"buttons")===v?" checked":""}><span>${i}<b>${t}</b><small>${s}</small></span></label>`).join("")}</div>
-    <div id="sFix"></div>
-    <div class="field"><label>Name shown in the app, and which OBS source gives the picture. Saved in OBS for every phone; cameras are listed in name order.</label></div>
-    ${S.devices.map(d=>{const cur=S.camCfg?.pictures?.[d.source]||"";return `<div class="camrow"><div class="field"><label>${esc(d.source)} · name</label><input data-name="${esc(d.source)}" value="${esc(S.camCfg?.names?.[d.source]||"")}" placeholder="${esc(d.source)}" autocapitalize="off"></div>
-      <div class="field"><label>picture</label><select data-pic="${esc(d.source)}">
-      <option value=""${cur?"":" selected"}>Automatic (${esc(d.auto||d.source)})</option>
-      ${(S.videoInputs||[]).map(n=>`<option value="${esc(n)}"${cur===n?" selected":""}>${esc(n)}</option>`).join("")}</select></div></div>`}).join("")}`):""}
-    <div class="btns${force?" one":""}">${force?"":"<button data-close>Close</button>"}<button class="primary" id="sSave">Save &amp; connect</button></div>`,
-    close=>{renderUpd();checkUpdate();loadAutofix();
-      document.querySelectorAll("[data-hide]").forEach(c=>c.onchange=()=>{const a=document.querySelectorAll("[data-hide]");
-        $("sShown").textContent=`${[...a].filter(x=>x.checked).length} of ${a.length}`});
-      $("sSave").onclick=async()=>{
-      cfg.host=$("sHost").value.trim();cfg.port=+$("sPort").value||4455;cfg.pw=$("sPw").value;
-      store.set("host",cfg.host);store.set("port",cfg.port);store.set("pw",cfg.pw);
-      S.quality=document.querySelector("input[name=sQ]:checked")?.value||S.quality;store.set("quality",S.quality);
-      if($("sStudio")&&$("sStudio").checked!==!!S.studio&&obs.ready)
-        await obs.call("SetStudioModeEnabled",{studioModeEnabled:$("sStudio").checked}).catch(fail);
-      if($("sShowAss")){S.showAss=$("sShowAss").checked;store.set("showAss",S.showAss);renderAss()}
-      document.querySelectorAll("[data-hide]").forEach(c=>c.checked?S.hidden.delete(c.dataset.hide):S.hidden.add(c.dataset.hide));
-      store.set("hidden",[...S.hidden]);renderScenes();
-      S.showAudio=$("sShowAudio").checked;store.set("showAudio",S.showAudio);renderAudio();
-      const ctl=document.querySelector("input[name=sCtrl]:checked");if(ctl){S.ctrl=ctl.value;store.set("ctrl",S.ctrl);applyCtrl()}
-      if(S.devices.length&&obs.ready){
-        const c={names:{...(S.camCfg?.names||{})},pictures:{...(S.camCfg?.pictures||{})}};
-        const put=(o,k,v)=>{if(v)o[k]=v;else delete o[k]};
-        document.querySelectorAll("[data-name]").forEach(el=>put(c.names,el.dataset.name,el.value.trim()));
-        document.querySelectorAll("[data-pic]").forEach(el=>put(c.pictures,el.dataset.pic,el.value));
-        await obs.call("SetPersistentData",{...CAMCFG,slotValue:c}).catch(fail);
-      }
-      if($("sAutofix")&&obs.ready)await obs.call("SetPersistentData",{...APPSET,slotValue:{autofix:$("sAutofix").checked}}).catch(fail);
-      $("imgCam").removeAttribute("src");delete $("scrim").dataset.lock;close();
-      obs.close();connect()}});
-  if(force)$("scrim").dataset.lock="1";else delete $("scrim").dataset.lock;
-}
-$("btnSettings").onclick=()=>openSettings(false);
+/* ---------- ⋮ menu: stats, scene switcher, refresh camera, settings ---------- */
+function renderMenuStats(){const el=$("mStats");if(!el)return;const p=statsParts();
+  el.innerHTML=p?`<div><b>${p.cpu}</b><span>CPU</span></div><div><b>${p.fps}</b><span>fps</span></div><div><b>${p.dropped}</b><span>Dropped</span></div>`:`<div><b>–</b><span>CPU</span></div><div><b>–</b><span>fps</span></div><div><b>–</b><span>Dropped</span></div>`;
+  const x=p?.extra||[];$("mStatsX").innerHTML=x.map(([l,v])=>`<div>${esc(l)}<b>${esc(v)}</b></div>`).join("");$("mStatsX").hidden=!x.length}
+function renderMenu(){
+  const m=$("menu"),d=curDev(),upd=!!(S.upd?.update&&!S.upd.blocked);
+  m.innerHTML=(obs.ready?`<div class="mstatsw"><div class="mstats" id="mStats"></div><div class="mstats-x" id="mStatsX" hidden></div></div>`:"")
+    +(obs.ready&&S.ass!==null?`<label class="mi">${ICON.shuffle}<span class="grow">Scene switcher<small>${S.ass?"On: OBS switches scenes by itself":"Off: scenes change only when you switch them"}</small></span><input type="checkbox" class="sw" id="mAss"${S.ass?" checked":""}></label>`:"")
+    +(obs.ready&&S.tab==="tabCam"&&d?`<button class="mi" id="mRefresh">${ICON.refresh}<span class="grow">Refresh camera<small>Reconnect ${esc(nameOf(d))}'s picture and control</small></span></button>`:"")
+    +`<button class="mi" id="mSettings">${ICON.sliders}<span class="grow">Settings</span>${upd?'<span class="bdot"></span>':""}</button>`;
+  renderMenuStats();
+  if($("mAss"))$("mAss").onchange=e=>{e.target.checked=!!S.ass;toggleAss()};
+  if($("mRefresh"))$("mRefresh").onclick=()=>{closeMenu();refreshCamera()};
+  $("mSettings").onclick=()=>{closeMenu();openSettings()}}
+function openMenu(){renderMenu();$("menu").hidden=false;if(obs.ready)loadOutputs(true).catch(()=>{})}
+function closeMenu(){$("menu").hidden=true}
+$("btnMore").onclick=e=>{e.stopPropagation();buzz();$("menu").hidden?openMenu():closeMenu()};
+document.addEventListener("click",e=>{if(!$("menu").hidden&&!e.target.closest("#menu,#btnMore"))closeMenu()});
 
-/* ---------- auto-reconnect of frozen NDI cameras (runs in server.py, see autofix.py) ---------- */
+/* ---------- full-screen pages ---------- */
+const pageState={pg1:null,pg2:null};  // which page each layer shows, so it can be redrawn when something changes
+function page(id,kind,title,body,{back=true,act="",bind}={}){
+  const el=$(id),keep=pageState[id]===kind&&el.classList.contains("show")?el.querySelector(".pbody")?.scrollTop:0;
+  pageState[id]=kind;
+  el.innerHTML=`<div class="ph"><div class="wrap">${back?`<button class="back" aria-label="Back">${ICON.back}</button>`:'<span style="width:8px"></span>'}<h3>${title}</h3>${act}</div></div><div class="pbody"><div class="wrap">${body}</div></div>`;
+  el.classList.add("show");el.querySelector(".pbody").scrollTop=keep||0;
+  if(back)el.querySelector(".back").onclick=()=>closePage(id);
+  bind&&bind(el)}
+function closePage(id){$(id).classList.remove("show");pageState[id]=null;if(id==="pg2"&&pageState.pg1==="settings")openSettings()}
+// (the Connection page isn't redrawn: that would wipe a password half typed in)
+function renderPageIfOpen(){if(pageState.pg1==="settings")openSettings();if(pageState.pg2==="scenes")openScenes()}
+// Escape / the phone's back gesture on a page closes it
+addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(!$("menu").hidden)return closeMenu();
+  if($("scrim").classList.contains("show")&&!$("scrim").dataset.lock)return $("scrim").classList.remove("show");
+  if(pageState.pg2&&!(forced&&pageState.pg2==="connection"))return closePage("pg2");if(pageState.pg1&&!forced)closePage("pg1")});
+
+/* Settings: who a change affects decides where it sits. Changes apply at once; only Connect has a button. */
+const QNOTE={smooth:"25 fps. About 5 Mbit/s of Wi-Fi while a picture is on screen.",balanced:"10 fps. Fine on most Wi-Fi.",saver:"2 fps. Use this on mobile data."};
+const segH=(key,opts)=>`<div class="seg" data-set="${key}" style="grid-template-columns:repeat(${opts.length},1fr)">${opts.map(([v,t])=>`<button data-v="${v}" class="${S[key]===v?"sel":""}">${t}</button>`).join("")}</div>`;
+function openSettings(){
+  const u=S.upd,upd=u?.update&&!u.blocked;
+  page("pg1","settings","Settings",`
+    ${upd?`<div class="updc"><div><b>Version ${esc(u.latest)} is ready</b><span>You have ${esc(u.version)}. OBS keeps running while it updates.</span></div><button id="sUpdate">Update</button></div>`:""}
+    <div class="sl">${ICON.wifi}Connection</div>
+    <div class="list"><button class="row nav" id="sConn"><span class="cdot${obs.ready?"":" off"}"></span><span class="grow">${obs.ready?`Connected to ${esc(cfg.host)}`:S.conn==="wait"?"Connecting…":"Not connected"}<small>${obs.ready?esc(S.collection||"OBS")+" · "+viaText():"Tap to check the PC's address and password"}</small></span></button></div>
+    <div class="sl">${ICON.phone}This phone</div>
+    <div class="list">
+      <div class="rowx"><b>Picture</b>${segH("quality",[["smooth","Smooth"],["balanced","Balanced"],["saver","Data saver"]])}</div>
+      <div class="rowx"><b>Camera controls</b>${segH("ctrl",[["buttons","Buttons"],["joystick","Joystick"]])}</div>
+    </div>
+    <div class="foot" id="qNote">${QNOTE[S.quality]||""}</div>
+    ${obs.ready?`<div class="sl">${ICON.monitor}OBS <span class="who">Changes it for every phone</span></div>
+    <div class="list">
+      <label class="row"><span class="grow">Studio Mode<small>${S.studio?"Preview a scene first, then TAKE it":"Off: tapping a scene puts it straight on air"}</small></span><input type="checkbox" class="sw" id="sStudio"${S.studio?" checked":""}></label>
+      <label class="row" id="sFixRow" hidden><span class="grow">Fix frozen NDI cameras<small id="sFixInfo"></small></span><input type="checkbox" class="sw" id="sFix"></label>
+    </div>
+    <div class="foot" id="sFixFoot" hidden>Runs on the OBS PC, even with no phone open. After 20 seconds of the exact same frame from a camera that was moving, it reselects that camera's NDI source, at most once a minute. It never moves a camera or changes scenes.</div>`:""}
+    <div class="sl">${ICON.info}About</div>
+    <div class="list">
+      <div class="row"><span class="grow">OBS Remote</span><span class="v">${esc(u?.version||"")}</span></div>
+      ${S.obsVersion?`<div class="row"><span class="grow">OBS Studio</span><span class="v">${esc(S.obsVersion)}</span></div>`:""}
+      ${u&&!upd?`<button class="row" id="sCheck"><span class="grow">${u.update&&u.blocked?esc(u.latest)+" is available<small>"+esc(u.blocked)+"</small>":u.latest?"Up to date":"Couldn't check for updates<small>Is the OBS PC online?</small>"}</span><span class="v">Check now</span></button>`:""}
+    </div>`,{bind:el=>{
+    $("sConn").onclick=()=>openConnection(false);
+    el.querySelectorAll(".seg").forEach(g=>g.addEventListener("click",e=>{const b=e.target.closest("[data-v]");if(!b)return;buzz();
+      g.querySelectorAll("button").forEach(x=>x.classList.toggle("sel",x===b));const k=g.dataset.set;S[k]=b.dataset.v;store.set(k,S[k]);
+      if(k==="quality")$("qNote").textContent=QNOTE[S.quality];else{stopMove();applyCtrl()}}));
+    if($("sStudio"))$("sStudio").onchange=e=>{buzz();obs.call("SetStudioModeEnabled",{studioModeEnabled:e.target.checked}).then(()=>toast(e.target.checked?"Studio Mode on in OBS":"Studio Mode off in OBS")).catch(fail)};
+    if($("sUpdate"))$("sUpdate").onclick=confirmUpdate;
+    if($("sCheck"))$("sCheck").onclick=async()=>{const b=$("sCheck");b.disabled=true;b.querySelector(".v").textContent="Checking…";
+      await checkUpdate(true);if(S.upd&&!S.upd.update&&S.upd.latest)toast(`You have the latest version (${S.upd.version}).`);openSettings()};
+    loadAutofix()}})}
+// Fix frozen NDI cameras (runs in server.py, see autofix.py). Shown only when that server answers.
 const APPSET={realm:"OBS_WEBSOCKET_DATA_REALM_PROFILE",slotName:"obs-remote.settings"};
 async function loadAutofix(){
-  const el=$("sFix");if(!el)return;
+  if(!$("sFix"))return;
   let a;try{const r=await fetch("/api/autofix",{cache:"no-store"});if(!r.ok)return;a=await r.json()}catch{return}
+  if(!$("sFix"))return;
   const t=x=>new Date(x*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
   const today=a.events.filter(e=>new Date(e.t*1000).toDateString()===new Date().toDateString());
   const last=a.events[a.events.length-1];
-  const info=!a.running?`Not running: ${esc(a.error||"can't reach OBS")}`
+  $("sFixInfo").textContent=!a.enabled?"Off":!a.running?`Not running: ${a.error||"can't reach OBS"}`
     :!a.watching.length?"No NDI cameras to watch."
-    :`Watching ${a.watching.map(esc).join(", ")}.`+(last?` Last fix: ${esc(last.source)} at ${t(last.t)} (${today.length} today).`:" No freezes so far.");
-  el.innerHTML=`<label class="check"><input type="checkbox" id="sAutofix" ${a.enabled?"checked":""}>Reconnect a camera automatically when its NDI picture freezes</label>
-    <p class="hint" style="margin:-6px 0 6px 30px;font-size:12px;color:var(--dim)">If a camera's picture shows the exact same frame for 20 seconds after it was moving, the OBS PC re-selects its NDI source, at most once a minute. It never moves a camera or changes scenes, and works even with no phone open.</p>
-    <p class="hint" style="margin:0 0 14px 30px;font-size:12px;color:var(--dim)">${info}</p>`}
+    :`Watching ${a.watching.join(", ")}.`+(last?` Last fix: ${last.source} at ${t(last.t)} (${today.length} today).`:" No freezes so far.");
+  $("sFix").checked=!!a.enabled;$("sFixRow").hidden=$("sFixFoot").hidden=false;
+  $("sFix").onchange=e=>{buzz();obs.call("SetPersistentData",{...APPSET,slotValue:{autofix:e.target.checked}})
+    .then(()=>{toast(e.target.checked?"Fixing frozen cameras":"Not fixing frozen cameras");setTimeout(loadAutofix,1500)}).catch(fail)}}
+
+/* Connection: who you're connected to; scanning the setup window's QR code is the easy way in.
+   forced = no password yet, or the saved one was refused: this page stays until a connection works. */
+let forced=false;
+function openConnection(force){
+  if(force)forced=true;
+  const layer=forced?"pg1":"pg2",open=forced||!obs.ready;
+  page(layer,"connection","Connection",`
+    ${obs.ready?`<div class="list" style="margin-top:14px"><div class="row"><span class="cdot"></span><span class="grow">Connected<small>${esc(S.collection||"OBS")} · ${esc(cfg.host)} · ${viaText()}</small></span></div></div>`:""}
+    <div class="sl">${forced?"Connect to OBS":"Connect to another PC"}</div>
+    <div class="list"><div class="qr">${ICON.qr}<p><b>Scan the code on the PC</b>Open OBS Remote on the OBS PC. Point this phone's camera at the QR code in its window.</p></div></div>
+    <details class="hand"${open?" open":""}><summary>Enter the details by hand</summary>
+      <div class="list flist">
+        <div class="field"><label for="cHost">OBS PC address</label><input id="cHost" value="${esc(cfg.host)}" inputmode="url" autocapitalize="off" autocomplete="off"></div>
+        <div class="field"><label for="cPort">Port</label><input id="cPort" value="${esc(cfg.port)}" inputmode="numeric"></div>
+        <div class="field"><label for="cPw">Password</label><input id="cPw" type="password" value="${esc(cfg.pw)}" autocomplete="current-password"></div>
+      </div>
+      <div class="foot">The password is in OBS, under Tools › WebSocket Server Settings.</div>
+      <button class="wide" id="cGo">Connect</button>
+    </details>`,{back:!forced,bind:()=>{
+    $("cGo").onclick=()=>{buzz();
+      cfg.host=$("cHost").value.trim()||cfg.host;cfg.port=+$("cPort").value||4455;cfg.pw=$("cPw").value;
+      store.set("host",cfg.host);store.set("port",cfg.port);store.set("pw",cfg.pw);
+      // Close the page straight away, as the old Save & connect did: if OBS turns out to be closed, the Start OBS
+      // offer underneath must be visible. A wrong password brings this page back (connect → openConnection(true)).
+      forced=false;["pg1","pg2"].forEach(id=>{if(pageState[id]==="connection")closePage(id)});
+      $("imgCam").removeAttribute("src");toast("Connecting to "+cfg.host+"…");obs.close();retry=0;connect()}}})}
+function closeForced(){if(!forced)return;forced=false;closePage("pg1");$("pg2").classList.remove("show");pageState.pg2=null}
+
+/* Scenes: one list with search. Tap a row to use it; star it to make it a key on the Switcher. */
+function openScenes(){
+  const nf=S.scenes.filter(n=>S.fav.has(n)).length,typed=pageState.pg2==="scenes"?$("find")?.value||"":"";
+  page("pg2","scenes","Scenes",`<input class="find" id="find" placeholder="Find a scene" autocomplete="off" aria-label="Find a scene">
+    <div class="list" id="allList">${S.scenes.map(n=>{const c=n===S.program?"pgm":n===S.preview?"pvw":"",f=S.fav.has(n);
+      return `<div class="srow ${c}" data-name="${esc(n.toLowerCase())}"><button class="suse" data-use="${esc(n)}"><span class="sth"><img data-th="${esc(n)}" alt=""${S.sthumbs[n]?` src="${S.sthumbs[n]}"`:""}></span><span class="grow">${esc(n)}${c?`<small>${c==="pgm"?"On air":"In preview"}</small>`:""}</span></button><button class="star${f?" on":""}" data-star="${esc(n)}" aria-label="Favourite ${esc(n)}" aria-pressed="${f}">${f?ICON.starOn:ICON.star}</button></div>`}).join("")}</div>
+    <div class="foot">${nf?`${nf} starred: only these are keys on the Switcher, plus whatever is on air or in preview. Saved in OBS for every phone.`:"Nothing starred: every scene is a key on the Switcher. Star a few to keep it short. Saved in OBS for every phone."}</div>`,
+  {act:nf?`<button class="act" id="clearFav">Clear stars</button>`:"",bind:el=>{
+    const q=$("find");q.oninput=()=>{const s=q.value.toLowerCase();el.querySelectorAll(".srow").forEach(r=>r.hidden=!r.dataset.name.includes(s))};
+    if(typed){q.value=typed;q.oninput()}
+    if($("clearFav"))$("clearFav").onclick=()=>{buzz();S.fav.clear();saveFavs();renderScenes();openScenes()};
+    $("allList").onclick=e=>{const u=e.target.closest("[data-use]"),f=e.target.closest("[data-star]");
+      if(f){buzz();const n=f.dataset.star;S.fav.has(n)?S.fav.delete(n):S.fav.add(n);saveFavs();renderScenes();
+        openScenes();return}
+      if(u){closePage("pg2");useScene(u.dataset.use)}}}});
+  // thumbnails for rows that don't have one yet
+  (async()=>{for(const n of S.scenes){if(pageState.pg2!=="scenes")break;if(!S.sthumbs[n])await sceneThumb(n)}})()}
 
 /* ---------- self-update ----------
    server.py compares its VERSION with the one on GitHub and, on request, downloads main and restarts itself.
-   OBS isn't touched. A page served some other way has no /api and this stays hidden. */
+   OBS isn't touched. A page served some other way has no /api and nothing about updates shows. */
 S.upd=null;
 async function checkUpdate(fresh){  // fresh: ask GitHub now instead of the server's 10-minute cache
   try{const r=await fetch("/api/version"+(fresh?"?fresh=1":""),{cache:"no-store"});S.upd=r.ok?await r.json():null}catch{S.upd=null}
-  $("btnSettings").classList.toggle("badge",!!(S.upd?.update&&!S.upd.blocked));renderUpd()}
-function renderUpd(){
-  const el=$("sUpd"),u=S.upd;if(!el)return;if(!u){el.innerHTML="";return}
-  el.innerHTML=`<div class="upd"><span><b>OBS Remote ${esc(u.version)}</b><br>${
-    u.update?(u.blocked?`${esc(u.latest)} is available. ${esc(u.blocked)}`:`Version ${esc(u.latest)} is available.`)
-    :u.latest?"Up to date.":"Couldn't check for updates. Is the OBS PC online?"}</span>${
-    u.update&&!u.blocked?`<button class="primary" id="sUpdate">Update</button>`:`<button id="sCheck">Check for updates</button>`}</div>`;
-  if($("sCheck"))$("sCheck").onclick=async()=>{const b=$("sCheck");b.disabled=true;b.textContent="Checking…";
-    await checkUpdate(true);if(S.upd&&!S.upd.update&&S.upd.latest)toast(`You have the latest version (${S.upd.version}).`)};
+  $("btnMore").classList.toggle("badge",!!(S.upd?.update&&!S.upd.blocked))}
+function confirmUpdate(){const u=S.upd;if(!u)return;
   // release notes (GitHub markdown, shown as plain text) above the usual explanation
   const notes=(u.notes||"").replace(/\r/g,"").replace(/^#+\s*/gm,"").replace(/\*\*|__|`/g,"").trim();
-  if($("sUpdate"))$("sUpdate").onclick=()=>confirmSheet(`Update to ${u.latest}?`,
+  confirmSheet(`Update to ${u.latest}?`,
     (notes?(notes.length>600?notes.slice(0,600)+"…":notes)+"\n\n":"")+
     "The OBS PC downloads the new version from GitHub and restarts the app's web server. OBS itself keeps running. Phones reload in a few seconds.",
     "Update",false,runUpdate)}
@@ -1332,10 +1562,11 @@ async function runUpdate(){
     try{const v=await (await fetch("/api/version",{cache:"no-store"})).json();if(v.version===j.version){location.reload();return}}catch{}}
   toast("The app server didn't come back. On the OBS PC, open OBS Remote from the Start menu.",true)}
 checkUpdate();setInterval(checkUpdate,6*3600e3);
+obs.on("open",()=>obs.call("GetVersion").then(v=>{S.obsVersion=v.obsVersion}).catch(()=>{}));
 
 /* ---------- go ---------- */
-renderOutputs();
-if(!cfg.pw)openSettings(true);else connect();
+renderOutputs();renderScenes();renderAudio();renderCams();
+if(!cfg.pw){setConn("err","Not connected");openConnection(true)}else connect();
 shotLoop();
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!obs.ready&&cfg.pw){clearTimeout(retryT);retry=0;connect()}else if(!document.hidden&&obs.ready)loadAll()});
 </script>
